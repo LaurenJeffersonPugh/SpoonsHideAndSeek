@@ -376,6 +376,7 @@ export const nearestToQuestion = async (
                 drag: false,
                 color: "black",
                 collapsed: false,
+                hidden: false,
             },
             "Finding matching locations...",
         );

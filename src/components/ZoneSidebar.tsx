@@ -1,6 +1,12 @@
 import { useStore } from "@nanostores/react";
 import * as turf from "@turf/turf";
-import type { Feature, FeatureCollection } from "geojson";
+import type {
+    Feature,
+    FeatureCollection,
+    MultiPolygon as GeoJSONMultiPolygon,
+    Point as GeoJSONPoint,
+    Polygon as GeoJSONPolygon,
+} from "geojson";
 import * as L from "leaflet";
 import _ from "lodash";
 import { SidebarCloseIcon } from "lucide-react";
@@ -9,9 +15,9 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "react-toastify";
 
 import {
+    rightSidebarOpen,
     Sidebar,
     SidebarContent,
-    SidebarContext,
     SidebarGroup,
     SidebarGroupContent,
     SidebarMenu,
@@ -40,6 +46,7 @@ import {
 import { cn } from "@/lib/utils";
 import {
     BLANK_GEOJSON,
+    type CustomStation,
     findPlacesInZone,
     findPlacesSpecificInZone,
     findTentacleLocations,
@@ -84,6 +91,83 @@ function _previewText(count: number) {
 
 let buttonJustClicked = false;
 
+const SPOONS_ZONE_DEFAULTS_KEY = "spoons:hiding-zone-defaults:v2";
+const spoonsDataUrl = (filename: string) =>
+    `${import.meta.env.BASE_URL.replace(/\/?$/, "/")}data/${filename}`;
+
+type SpoonsStopFeature = Feature<
+    GeoJSONPoint,
+    {
+        name?: string;
+        "icon-color"?: string;
+    }
+>;
+
+type SpoonsHidingZoneCircleCollection = FeatureCollection<
+    GeoJSONPolygon,
+    StationPlace
+>;
+type SpoonsNoOverlapCollection = FeatureCollection<
+    GeoJSONPolygon | GeoJSONMultiPolygon
+>;
+
+const spoonsStopsToCustomStations = (
+    stopsGeoJson: FeatureCollection<GeoJSONPoint>,
+): CustomStation[] =>
+    stopsGeoJson.features.map((feature) => {
+        const [lng, lat] = feature.geometry.coordinates;
+        const name = (feature as SpoonsStopFeature).properties?.name;
+
+        return {
+            id: `${lat},${lng}`,
+            name,
+            lat,
+            lng,
+        };
+    });
+
+const shouldUsePregeneratedSpoonsCircles = (
+    useCustomStations: boolean,
+    includeDefaultStations: boolean,
+    radius?: number,
+    units?: string,
+) =>
+    useCustomStations &&
+    !includeDefaultStations &&
+    (radius === undefined || radius === 500) &&
+    (units === undefined || units === "meters");
+
+const loadPregeneratedSpoonsCircles = async (signal: AbortSignal) => {
+    const response = await fetch(spoonsDataUrl("hiding-zone-circles.geojson"), {
+        signal,
+    });
+
+    if (!response.ok) {
+        throw new Error(
+            `Failed to load hiding-zone-circles.geojson: ${response.status} ${response.statusText}`,
+        );
+    }
+
+    return (await response.json()) as SpoonsHidingZoneCircleCollection;
+};
+
+const loadPregeneratedSpoonsNoOverlap = async (signal: AbortSignal) => {
+    const response = await fetch(
+        spoonsDataUrl("hiding-zone-no-overlap.geojson"),
+        {
+            signal,
+        },
+    );
+
+    if (!response.ok) {
+        throw new Error(
+            `Failed to load hiding-zone-no-overlap.geojson: ${response.status} ${response.statusText}`,
+        );
+    }
+
+    return (await response.json()) as SpoonsNoOverlapCollection;
+};
+
 export const ZoneSidebar = () => {
     const $displayHidingZones = useStore(displayHidingZones);
     const $questionFinishedMapData = useStore(questionFinishedMapData);
@@ -106,6 +190,137 @@ export const ZoneSidebar = () => {
     const setStations = trainStations.set;
     const sidebarRef = useRef<HTMLDivElement>(null);
     const [importUrl, setImportUrl] = useState("");
+    const [spoonsCircleGeoJson, setSpoonsCircleGeoJson] =
+        useState<SpoonsHidingZoneCircleCollection | null>(null);
+    const [spoonsNoOverlapGeoJson, setSpoonsNoOverlapGeoJson] =
+        useState<SpoonsNoOverlapCollection | null>(null);
+
+    useEffect(() => {
+        if (localStorage.getItem(SPOONS_ZONE_DEFAULTS_KEY) === "done") return;
+
+        const controller = new AbortController();
+
+        const applySpoonsZoneDefaults = async () => {
+            try {
+                const response = await fetch(spoonsDataUrl("stops.geojson"), {
+                    signal: controller.signal,
+                });
+
+                if (!response.ok) {
+                    throw new Error(
+                        `Failed to load stops.geojson: ${response.status} ${response.statusText}`,
+                    );
+                }
+
+                const stopsGeoJson =
+                    (await response.json()) as FeatureCollection<GeoJSONPoint>;
+
+                if (controller.signal.aborted) return;
+
+                customStationsAtom.set(
+                    spoonsStopsToCustomStations(stopsGeoJson),
+                );
+                displayHidingZones.set(true);
+                useCustomStationsAtom.set(true);
+                includeDefaultStationsAtom.set(false);
+                mergeDuplicatesAtom.set(true);
+                hidingRadius.set(500);
+                hidingRadiusUnits.set("meters");
+                displayHidingZonesStyle.set("no-overlap");
+                localStorage.setItem(SPOONS_ZONE_DEFAULTS_KEY, "done");
+            } catch (error) {
+                if (controller.signal.aborted) return;
+
+                console.error(
+                    "Failed to apply Spoons hiding zone defaults",
+                    error,
+                );
+            }
+        };
+
+        void applySpoonsZoneDefaults();
+
+        return () => controller.abort();
+    }, []);
+
+    useEffect(() => {
+        if (
+            $displayHidingZones &&
+            $displayHidingZonesStyle !== "no-overlap" &&
+            $displayHidingZonesStyle !== "no-display"
+        ) {
+            displayHidingZonesStyle.set("no-overlap");
+        }
+    }, [$displayHidingZones, $displayHidingZonesStyle]);
+
+    useEffect(() => {
+        if (!useCustomStations || includeDefaultStations) return;
+
+        if ($hidingRadius !== 500) {
+            hidingRadius.set(500);
+        }
+
+        if ($hidingRadiusUnits !== "meters") {
+            hidingRadiusUnits.set("meters");
+        }
+    }, [
+        $hidingRadius,
+        $hidingRadiusUnits,
+        includeDefaultStations,
+        useCustomStations,
+    ]);
+
+    useEffect(() => {
+        const controller = new AbortController();
+
+        const loadPregeneratedSpoonsZones = async () => {
+            try {
+                const [circles, noOverlap] = await Promise.all([
+                    loadPregeneratedSpoonsCircles(controller.signal),
+                    loadPregeneratedSpoonsNoOverlap(controller.signal),
+                ]);
+
+                if (controller.signal.aborted) return;
+
+                setSpoonsCircleGeoJson(circles);
+                setSpoonsNoOverlapGeoJson(noOverlap);
+            } catch (error) {
+                if (controller.signal.aborted) return;
+
+                console.error(
+                    "Failed to load pregenerated Spoons no-overlap hiding zones",
+                    error,
+                );
+            }
+        };
+
+        void loadPregeneratedSpoonsZones();
+
+        return () => controller.abort();
+    }, []);
+
+    useEffect(() => {
+        if (
+            !spoonsCircleGeoJson ||
+            stations.length > 0 ||
+            !shouldUsePregeneratedSpoonsCircles(
+                useCustomStations,
+                includeDefaultStations,
+            )
+        ) {
+            return;
+        }
+
+        setStations(spoonsCircleGeoJson.features);
+    }, [
+        $hidingRadius,
+        $hidingRadiusUnits,
+        includeDefaultStations,
+        setStations,
+        spoonsCircleGeoJson,
+        stations.length,
+        useCustomStations,
+    ]);
 
     const removeHidingZones = () => {
         if (!map) return;
@@ -177,263 +392,323 @@ export const ZoneSidebar = () => {
         const initializeHidingZones = async () => {
             isLoading.set(true);
 
-            const needsDefault = !useCustomStations || includeDefaultStations;
-            if (needsDefault && $displayHidingZonesOptions.length === 0) {
-                toast.error("At least one place type must be selected");
-                isLoading.set(false);
-                return;
-            }
-
-            let places: StationPlace[] = [];
-
-            if (!needsDefault) {
-                // Custom only
-                places = normalizeToStationFeatures(
-                    $customStations,
-                ).features.map((f) => ({
-                    type: "Feature",
-                    geometry: f.geometry,
-                    properties: {
-                        id:
-                            f.properties?.id ||
-                            `${(f.geometry as any).coordinates[1]},${(f.geometry as any).coordinates[0]}`,
-                        name: f.properties?.name,
-                    },
-                }));
-            } else {
-                // Fetch default, optionally merge custom
-                // @ts-expect-error osmtogeojson always defines properties with an "id" string
-                places = osmtogeojson(
-                    await findPlacesInZone(
-                        $displayHidingZonesOptions[0],
-                        "Finding stations. This may take a while. Do not press any buttons while this is processing. Don't worry, it will be cached.",
-                        "nwr",
-                        "center",
-                        $displayHidingZonesOptions.slice(1),
-                    ),
-                ).features;
-
-                if (
-                    useCustomStations &&
-                    $customStations.length > 0 &&
-                    includeDefaultStations
-                ) {
-                    const customFeatures = normalizeToStationFeatures(
-                        $customStations,
-                    ).features.map(
-                        (f) =>
-                            ({
-                                type: "Feature",
-                                geometry: f.geometry,
-                                properties: {
-                                    id:
-                                        f.properties?.id ||
-                                        `${f.geometry.coordinates[1]},${f.geometry.coordinates[0]}`,
-                                    name: f.properties?.name,
-                                },
-                            }) as StationPlace,
-                    );
-                    const seen = new Set<string>();
-                    const merged: StationPlace[] = [];
-                    const add = (feat: StationPlace) => {
-                        const id = feat.properties.id as string | undefined;
-                        const key =
-                            id && id.includes("/")
-                                ? `id:${id}`
-                                : `pt:${feat.geometry.coordinates[1]},${feat.geometry.coordinates[0]}`;
-                        if (!seen.has(key)) {
-                            seen.add(key);
-                            merged.push(feat);
-                        }
-                    };
-                    places.forEach(add);
-                    customFeatures.forEach(add);
-                    places = merged;
+            try {
+                const needsDefault =
+                    !useCustomStations || includeDefaultStations;
+                if (needsDefault && $displayHidingZonesOptions.length === 0) {
+                    toast.error("At least one place type must be selected");
+                    displayHidingZones.set(false);
+                    return;
                 }
-            }
 
-            // merge duplicate stations if selected
-            if (mergeDuplicates) {
-                places = mergeDuplicateStation(
-                    places,
-                    $hidingRadius,
-                    $hidingRadiusUnits,
+                let circles: StationCircle[] = [];
+                const usePregeneratedSpoonsCircles =
+                    shouldUsePregeneratedSpoonsCircles(
+                        useCustomStations,
+                        includeDefaultStations,
+                        $hidingRadius,
+                        $hidingRadiusUnits,
+                    );
+                let pregeneratedCirclesLoaded = false;
+                const unionized = safeUnion(
+                    turf.simplify($questionFinishedMapData, {
+                        tolerance: 0.001,
+                    }),
                 );
-            }
 
-            const unionized = safeUnion(
-                turf.simplify($questionFinishedMapData, {
-                    tolerance: 0.001,
-                }),
-            );
+                if (usePregeneratedSpoonsCircles) {
+                    try {
+                        const pregeneratedCircles =
+                            spoonsCircleGeoJson ??
+                            (await loadPregeneratedSpoonsCircles(
+                                new AbortController().signal,
+                            ));
 
-            let circles = places
-                .map((place) => {
-                    const radius = $hidingRadius;
-                    const center = turf.getCoord(place);
-                    const circle = turf.circle(center, radius, {
-                        steps: 32,
-                        units: $hidingRadiusUnits,
-                        properties: place,
-                    });
-
-                    return circle;
-                })
-                .filter((circle) => {
-                    return !turf.booleanWithin(circle, unionized);
-                });
-
-            for (const question of questions.get()) {
-                if (planningModeEnabled.get() && question.data.drag) {
-                    continue;
-                }
-
-                if (
-                    question.id === "matching" &&
-                    (question.data.type === "same-first-letter-station" ||
-                        question.data.type === "same-length-station" ||
-                        question.data.type === "same-train-line")
-                ) {
-                    const location = turf.point([
-                        question.data.lng,
-                        question.data.lat,
-                    ]);
-
-                    const nearestTrainStation = turf.nearestPoint(
-                        location,
-                        turf.featureCollection(
-                            circles.map((x) => x.properties),
-                        ) as any,
-                    );
-
-                    if (question.data.type === "same-train-line") {
-                        // Custom-only lists don't have reliable OSM IDs
-                        if (useCustomStations && !includeDefaultStations) {
-                            toast.warning(
-                                "'Same train line' isn't supported with custom-only station lists; skipping this filter.",
-                            );
-                        } else {
-                            const nid = nearestTrainStation.properties.id as
-                                | string
-                                | undefined;
-                            if (!nid || !nid.includes("/")) {
-                                toast.warning(
-                                    "Nearest station has no OSM id; skipping 'same train line' filter.",
-                                );
-                                continue;
-                            }
-
-                            const nodes = await trainLineNodeFinder(nid);
-
-                            if (nodes.length === 0) {
-                                toast.warning(
-                                    `No train line found for ${extractStationName(
-                                        nearestTrainStation,
-                                    )}`,
-                                );
-                                continue;
-                            } else {
-                                circles = circles.filter((circle) => {
-                                    const idProp =
-                                        circle.properties.properties.id;
-                                    if (!idProp || !idProp.includes("/"))
-                                        return false;
-                                    const id = parseInt(idProp.split("/")[1]);
-
-                                    return question.data.same
-                                        ? nodes.includes(id)
-                                        : !nodes.includes(id);
-                                });
-                            }
-                        }
-                    }
-
-                    const englishName = extractStationName(nearestTrainStation);
-
-                    if (!englishName)
-                        return toast.error("No English name found");
-
-                    if (question.data.type === "same-first-letter-station") {
-                        const letter = englishName[0].toUpperCase();
-
-                        circles = circles.filter((circle) => {
-                            const name = extractStationName(circle.properties);
-                            if (!name) return false;
-
-                            return question.data.same
-                                ? name[0].toUpperCase() === letter
-                                : name[0].toUpperCase() !== letter;
-                        });
-                    } else if (question.data.type === "same-length-station") {
-                        const seekerLength = englishName.length;
-                        const comparison = question.data.lengthComparison;
-
-                        circles = circles.filter((circle) => {
-                            const name = extractStationName(circle.properties);
-                            if (!name) return false;
-
-                            if (comparison === "same") {
-                                return name.length === seekerLength;
-                            } else if (comparison === "shorter") {
-                                return name.length < seekerLength;
-                            } else if (comparison === "longer") {
-                                return name.length > seekerLength;
-                            }
-                            return false;
-                        });
+                        circles = pregeneratedCircles.features.filter(
+                            (circle) => {
+                                return !turf.booleanWithin(circle, unionized);
+                            },
+                        );
+                        pregeneratedCirclesLoaded = true;
+                    } catch (error) {
+                        console.error(
+                            "Failed to load pregenerated Spoons hiding zones; falling back to runtime circle generation",
+                            error,
+                        );
                     }
                 }
-                if (
-                    question.id === "measuring" &&
-                    (question.data.type === "mcdonalds" ||
-                        question.data.type === "seven11")
-                ) {
-                    const points = await findPlacesSpecificInZone(
-                        question.data.type === "mcdonalds"
-                            ? QuestionSpecificLocation.McDonalds
-                            : QuestionSpecificLocation.Seven11,
-                    );
 
-                    const nearestPoint = turf.nearestPoint(
-                        turf.point([question.data.lng, question.data.lat]),
-                        points as any,
-                    );
+                let places: StationPlace[] = [];
 
-                    const distance = turf.distance(
-                        turf.point([question.data.lng, question.data.lat]),
-                        nearestPoint as any,
-                        {
-                            units: "miles",
+                if (!needsDefault && !pregeneratedCirclesLoaded) {
+                    if ($customStations.length === 0) {
+                        toast.error(
+                            "Import custom stations before displaying custom hiding zones.",
+                        );
+                        displayHidingZones.set(false);
+                        return;
+                    }
+
+                    // Custom only
+                    places = normalizeToStationFeatures(
+                        $customStations,
+                    ).features.map((f) => ({
+                        type: "Feature",
+                        geometry: f.geometry,
+                        properties: {
+                            id:
+                                f.properties?.id ||
+                                `${(f.geometry as any).coordinates[1]},${(f.geometry as any).coordinates[0]}`,
+                            name: f.properties?.name,
                         },
-                    );
+                    }));
+                } else if (needsDefault) {
+                    // Fetch default, optionally merge custom
+                    // @ts-expect-error osmtogeojson always defines properties with an "id" string
+                    places = osmtogeojson(
+                        await findPlacesInZone(
+                            $displayHidingZonesOptions[0],
+                            "Finding stations. This may take a while. Do not press any buttons while this is processing. Don't worry, it will be cached.",
+                            "nwr",
+                            "center",
+                            $displayHidingZonesOptions.slice(1),
+                        ),
+                    ).features;
 
-                    circles = circles.filter((circle) => {
-                        const point = turf.point(
-                            turf.getCoord(circle.properties),
+                    if (
+                        useCustomStations &&
+                        $customStations.length > 0 &&
+                        includeDefaultStations
+                    ) {
+                        const customFeatures = normalizeToStationFeatures(
+                            $customStations,
+                        ).features.map(
+                            (f) =>
+                                ({
+                                    type: "Feature",
+                                    geometry: f.geometry,
+                                    properties: {
+                                        id:
+                                            f.properties?.id ||
+                                            `${f.geometry.coordinates[1]},${f.geometry.coordinates[0]}`,
+                                        name: f.properties?.name,
+                                    },
+                                }) as StationPlace,
+                        );
+                        const seen = new Set<string>();
+                        const merged: StationPlace[] = [];
+                        const add = (feat: StationPlace) => {
+                            const id = feat.properties.id as string | undefined;
+                            const key =
+                                id && id.includes("/")
+                                    ? `id:${id}`
+                                    : `pt:${feat.geometry.coordinates[1]},${feat.geometry.coordinates[0]}`;
+                            if (!seen.has(key)) {
+                                seen.add(key);
+                                merged.push(feat);
+                            }
+                        };
+                        places.forEach(add);
+                        customFeatures.forEach(add);
+                        places = merged;
+                    }
+                }
+
+                // merge duplicate stations if selected
+                if (mergeDuplicates) {
+                    places = mergeDuplicateStation(
+                        places,
+                        $hidingRadius,
+                        $hidingRadiusUnits,
+                    );
+                }
+
+                if (!pregeneratedCirclesLoaded) {
+                    circles = places
+                        .map((place) => {
+                            const radius = $hidingRadius;
+                            const center = turf.getCoord(place);
+                            const circle = turf.circle(center, radius, {
+                                steps: 32,
+                                units: $hidingRadiusUnits,
+                                properties: place,
+                            });
+
+                            return circle;
+                        })
+                        .filter((circle) => {
+                            return !turf.booleanWithin(circle, unionized);
+                        });
+                }
+
+                for (const question of questions.get()) {
+                    if (planningModeEnabled.get() && question.data.drag) {
+                        continue;
+                    }
+
+                    if (
+                        question.id === "matching" &&
+                        (question.data.type === "same-first-letter-station" ||
+                            question.data.type === "same-length-station" ||
+                            question.data.type === "same-train-line")
+                    ) {
+                        const location = turf.point([
+                            question.data.lng,
+                            question.data.lat,
+                        ]);
+
+                        const nearestTrainStation = turf.nearestPoint(
+                            location,
+                            turf.featureCollection(
+                                circles.map((x) => x.properties),
+                            ) as any,
                         );
 
-                        const nearest = turf.nearestPoint(point, points as any);
+                        if (question.data.type === "same-train-line") {
+                            // Custom-only lists don't have reliable OSM IDs
+                            if (useCustomStations && !includeDefaultStations) {
+                                toast.warning(
+                                    "'Same train line' isn't supported with custom-only station lists; skipping this filter.",
+                                );
+                            } else {
+                                const nid = nearestTrainStation.properties
+                                    .id as string | undefined;
+                                if (!nid || !nid.includes("/")) {
+                                    toast.warning(
+                                        "Nearest station has no OSM id; skipping 'same train line' filter.",
+                                    );
+                                    continue;
+                                }
 
-                        return question.data.hiderCloser
-                            ? turf.distance(point, nearest as any, {
-                                  units: "miles",
-                              }) <
-                                  distance + $hidingRadius
-                            : turf.distance(point, nearest as any, {
-                                  units: "miles",
-                              }) >
-                                  distance - $hidingRadius;
-                    });
+                                const nodes = await trainLineNodeFinder(nid);
+
+                                if (nodes.length === 0) {
+                                    toast.warning(
+                                        `No train line found for ${extractStationName(
+                                            nearestTrainStation,
+                                        )}`,
+                                    );
+                                    continue;
+                                } else {
+                                    circles = circles.filter((circle) => {
+                                        const idProp =
+                                            circle.properties.properties.id;
+                                        if (!idProp || !idProp.includes("/"))
+                                            return false;
+                                        const id = parseInt(
+                                            idProp.split("/")[1],
+                                        );
+
+                                        return question.data.same
+                                            ? nodes.includes(id)
+                                            : !nodes.includes(id);
+                                    });
+                                }
+                            }
+                        }
+
+                        const englishName =
+                            extractStationName(nearestTrainStation);
+
+                        if (!englishName)
+                            return toast.error("No English name found");
+
+                        if (
+                            question.data.type === "same-first-letter-station"
+                        ) {
+                            const letter = englishName[0].toUpperCase();
+
+                            circles = circles.filter((circle) => {
+                                const name = extractStationName(
+                                    circle.properties,
+                                );
+                                if (!name) return false;
+
+                                return question.data.same
+                                    ? name[0].toUpperCase() === letter
+                                    : name[0].toUpperCase() !== letter;
+                            });
+                        } else if (
+                            question.data.type === "same-length-station"
+                        ) {
+                            const seekerLength = englishName.length;
+                            const comparison = question.data.lengthComparison;
+
+                            circles = circles.filter((circle) => {
+                                const name = extractStationName(
+                                    circle.properties,
+                                );
+                                if (!name) return false;
+
+                                if (comparison === "same") {
+                                    return name.length === seekerLength;
+                                } else if (comparison === "shorter") {
+                                    return name.length < seekerLength;
+                                } else if (comparison === "longer") {
+                                    return name.length > seekerLength;
+                                }
+                                return false;
+                            });
+                        }
+                    }
+                    if (
+                        question.id === "measuring" &&
+                        (question.data.type === "mcdonalds" ||
+                            question.data.type === "seven11")
+                    ) {
+                        const points = await findPlacesSpecificInZone(
+                            question.data.type === "mcdonalds"
+                                ? QuestionSpecificLocation.McDonalds
+                                : QuestionSpecificLocation.Seven11,
+                        );
+
+                        const nearestPoint = turf.nearestPoint(
+                            turf.point([question.data.lng, question.data.lat]),
+                            points as any,
+                        );
+
+                        const distance = turf.distance(
+                            turf.point([question.data.lng, question.data.lat]),
+                            nearestPoint as any,
+                            {
+                                units: "miles",
+                            },
+                        );
+
+                        circles = circles.filter((circle) => {
+                            const point = turf.point(
+                                turf.getCoord(circle.properties),
+                            );
+
+                            const nearest = turf.nearestPoint(
+                                point,
+                                points as any,
+                            );
+
+                            return question.data.hiderCloser
+                                ? turf.distance(point, nearest as any, {
+                                      units: "miles",
+                                  }) <
+                                      distance + $hidingRadius
+                                : turf.distance(point, nearest as any, {
+                                      units: "miles",
+                                  }) >
+                                      distance - $hidingRadius;
+                        });
+                    }
                 }
-            }
 
-            setStations(circles);
-            isLoading.set(false);
+                setStations(circles);
+            } finally {
+                isLoading.set(false);
+            }
         };
 
         if ($displayHidingZones && $questionFinishedMapData) {
             initializeHidingZones().catch((error) => {
                 console.log("Error in hiding zone initialization:", error);
+                isLoading.set(false);
+                displayHidingZones.set(false);
                 toast.error(
                     "An error occurred during hiding zone initialization",
                     { toastId: "hiding-zone-initialization-error" },
@@ -449,6 +724,7 @@ export const ZoneSidebar = () => {
         includeDefaultStations,
         $customStations,
         mergeDuplicates,
+        spoonsCircleGeoJson,
     ]);
 
     useEffect(() => {
@@ -484,9 +760,23 @@ export const ZoneSidebar = () => {
             const activeStations = stations.filter(
                 (x) => !$disabledStations.includes(x.properties.properties.id),
             );
+            const canUsePregeneratedNoOverlap =
+                $displayHidingZonesStyle === "no-overlap" &&
+                $disabledStations.length === 0 &&
+                activeStations.length === stations.length &&
+                shouldUsePregeneratedSpoonsCircles(
+                    useCustomStations,
+                    includeDefaultStations,
+                    $hidingRadius,
+                    $hidingRadiusUnits,
+                ) &&
+                spoonsNoOverlapGeoJson;
+
             showGeoJSON(
-                styleStations(activeStations, $displayHidingZonesStyle),
-                $displayHidingZonesStyle === "zones",
+                canUsePregeneratedNoOverlap
+                    ? spoonsNoOverlapGeoJson
+                    : styleStations(activeStations, $displayHidingZonesStyle),
+                false,
             );
         } else {
             removeHidingZones();
@@ -497,8 +787,11 @@ export const ZoneSidebar = () => {
         $displayHidingZonesStyle,
         $hidingRadius,
         $questionFinishedMapData,
+        includeDefaultStations,
         hidingZoneModeStationID,
+        spoonsNoOverlapGeoJson,
         stations,
+        useCustomStations,
     ]);
 
     return (
@@ -508,7 +801,7 @@ export const ZoneSidebar = () => {
                 <SidebarCloseIcon
                     className="mr-2 visible md:hidden scale-x-[-1]"
                     onClick={() => {
-                        SidebarContext.get().setOpenMobile(false);
+                        rightSidebarOpen.set(false);
                     }}
                 />
             </div>
@@ -858,58 +1151,6 @@ export const ZoneSidebar = () => {
                                     />
                                 </div>
                             </SidebarMenuItem>
-                            {$displayHidingZones && stations.length > 0 && (
-                                <SidebarMenuItem
-                                    className="bg-popover hover:bg-accent relative flex cursor-pointer gap-2 select-none items-center rounded-sm px-2 py-2.5 text-sm outline-none data-[disabled=true]:pointer-events-none data-[selected='true']:bg-accent data-[selected=true]:text-accent-foreground data-[disabled=true]:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
-                                    onClick={() => {
-                                        setHidingZoneModeStationID("");
-                                        displayHidingZonesStyle.set(
-                                            "no-display",
-                                        );
-                                    }}
-                                    disabled={$isLoading}
-                                >
-                                    No Display
-                                </SidebarMenuItem>
-                            )}
-                            {$displayHidingZones && stations.length > 0 && (
-                                <SidebarMenuItem
-                                    className="bg-popover hover:bg-accent relative flex cursor-pointer gap-2 select-none items-center rounded-sm px-2 py-2.5 text-sm outline-none data-[disabled=true]:pointer-events-none data-[selected='true']:bg-accent data-[selected=true]:text-accent-foreground data-[disabled=true]:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
-                                    onClick={() => {
-                                        setHidingZoneModeStationID("");
-                                        displayHidingZonesStyle.set("stations");
-                                    }}
-                                    disabled={$isLoading}
-                                >
-                                    All Stations
-                                </SidebarMenuItem>
-                            )}
-                            {$displayHidingZones && stations.length > 0 && (
-                                <SidebarMenuItem
-                                    className="bg-popover hover:bg-accent relative flex cursor-pointer gap-2 select-none items-center rounded-sm px-2 py-2.5 text-sm outline-none data-[disabled=true]:pointer-events-none data-[selected='true']:bg-accent data-[selected=true]:text-accent-foreground data-[disabled=true]:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
-                                    onClick={() => {
-                                        setHidingZoneModeStationID("");
-                                        displayHidingZonesStyle.set("zones");
-                                    }}
-                                    disabled={$isLoading}
-                                >
-                                    All Zones
-                                </SidebarMenuItem>
-                            )}
-                            {$displayHidingZones && stations.length > 0 && (
-                                <SidebarMenuItem
-                                    className="bg-popover hover:bg-accent relative flex cursor-pointer gap-2 select-none items-center rounded-sm px-2 py-2.5 text-sm outline-none data-[disabled=true]:pointer-events-none data-[selected='true']:bg-accent data-[selected=true]:text-accent-foreground data-[disabled=true]:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
-                                    onClick={() => {
-                                        setHidingZoneModeStationID("");
-                                        displayHidingZonesStyle.set(
-                                            "no-overlap",
-                                        );
-                                    }}
-                                    disabled={$isLoading}
-                                >
-                                    No Overlap
-                                </SidebarMenuItem>
-                            )}
                             {$displayHidingZones && hidingZoneModeStationID && (
                                 <SidebarMenuItem
                                     className={cn(
@@ -963,22 +1204,6 @@ export const ZoneSidebar = () => {
                                         Clear Disabled
                                     </SidebarMenuItem>
                                 )}
-                            {$displayHidingZones && (
-                                <SidebarMenuItem
-                                    className="bg-popover hover:bg-accent relative flex cursor-pointer gap-2 select-none items-center rounded-sm px-2 py-2.5 text-sm outline-none data-[disabled=true]:pointer-events-none data-[selected='true']:bg-accent data-[selected=true]:text-accent-foreground data-[disabled=true]:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
-                                    onClick={() => {
-                                        disabledStations.set(
-                                            stations.map(
-                                                (x) =>
-                                                    x.properties.properties.id,
-                                            ),
-                                        );
-                                    }}
-                                    disabled={$isLoading}
-                                >
-                                    Disable All
-                                </SidebarMenuItem>
-                            )}
                             {$displayHidingZones && (
                                 <Command
                                     key={
@@ -1108,6 +1333,10 @@ function styleStations(
     circles: StationCircle[],
     style: string,
 ): FeatureCollection | Feature {
+    if (circles.length === 0) {
+        return { type: "FeatureCollection", features: [] };
+    }
+
     switch (style) {
         case "no-display":
             return { type: "FeatureCollection", features: [] };
@@ -1186,6 +1415,7 @@ async function selectionProcess(
                         drag: false,
                         color: "black",
                         collapsed: false,
+                        hidden: false,
                     },
                     "Finding matching locations to hiding zone...",
                 );

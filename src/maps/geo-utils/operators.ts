@@ -18,6 +18,7 @@ import { BLANK_GEOJSON } from "@/maps/api";
 export { geoSpatialVoronoi } from "@/maps/geo-utils/voronoi";
 
 export const safeUnion = (input: FeatureCollection<Polygon | MultiPolygon>) => {
+    if (input.features.length === 0) return BLANK_GEOJSON.features[0];
     if (input.features.length === 1) return input.features[0];
     const union = turf.union(input);
     if (union) return union;

@@ -304,6 +304,7 @@ export const hiderifyMatching = async (question: MatchingQuestion) => {
             drag: false,
             color: "black",
             collapsed: false,
+            hidden: false,
         });
 
         question.same =

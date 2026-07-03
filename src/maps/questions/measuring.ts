@@ -323,6 +323,7 @@ export const hiderifyMeasuring = async (question: MeasuringQuestion) => {
             drag: false,
             color: "black",
             collapsed: false,
+            hidden: false,
         });
 
         question.hiderCloser =

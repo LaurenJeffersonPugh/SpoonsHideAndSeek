@@ -8,7 +8,6 @@ import { LiaThumbtackSolid } from "react-icons/lia";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
     Tooltip,
@@ -47,6 +46,7 @@ export const SidebarContext = atom<SidebarContextType>({
     isMobile: false,
     toggleSidebar: () => {},
 });
+export const rightSidebarOpen = atom(false);
 
 const SidebarProvider = React.forwardRef<
     HTMLDivElement,
@@ -69,12 +69,15 @@ const SidebarProvider = React.forwardRef<
         ref,
     ) => {
         const isMobile = useIsMobile();
-        const [openMobile, setOpenMobile] = React.useState(false);
+        const rightOpen = useStore(rightSidebarOpen);
+        const setRightOpen = React.useCallback((open: boolean) => {
+            rightSidebarOpen.set(open);
+        }, []);
 
         // This is the internal state of the sidebar.
         // We use openProp and setOpenProp for control from outside the component.
         const [_open, _setOpen] = React.useState(defaultOpen);
-        const open = openProp ?? _open;
+        const open = openProp ?? rightOpen ?? _open;
         const setOpen = React.useCallback(
             (value: boolean | ((value: boolean) => boolean)) => {
                 const openState =
@@ -84,19 +87,18 @@ const SidebarProvider = React.forwardRef<
                 } else {
                     _setOpen(openState);
                 }
+                setRightOpen(openState);
 
                 // This sets the cookie to keep the sidebar state.
                 document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
             },
-            [setOpenProp, open],
+            [setOpenProp, open, setRightOpen],
         );
 
         // Helper to toggle the sidebar.
         const toggleSidebar = React.useCallback(() => {
-            return isMobile
-                ? setOpenMobile((open) => !open)
-                : setOpen((open) => !open);
-        }, [isMobile, setOpen, setOpenMobile]);
+            setOpen((open) => !open);
+        }, [setOpen]);
 
         // Adds a keyboard shortcut to toggle the sidebar.
         React.useEffect(() => {
@@ -124,19 +126,11 @@ const SidebarProvider = React.forwardRef<
                 open,
                 setOpen,
                 isMobile,
-                openMobile,
-                setOpenMobile,
+                openMobile: open,
+                setOpenMobile: setOpen,
                 toggleSidebar,
             });
-        }, [
-            state,
-            open,
-            setOpen,
-            isMobile,
-            openMobile,
-            setOpenMobile,
-            toggleSidebar,
-        ]);
+        }, [state, open, setOpen, isMobile, toggleSidebar]);
 
         return (
             <TooltipProvider delayDuration={0}>
@@ -182,8 +176,9 @@ const Sidebar = React.forwardRef<
         },
         ref,
     ) => {
-        const { isMobile, state, openMobile, setOpenMobile } =
-            useStore(SidebarContext);
+        const { isMobile } = useStore(SidebarContext);
+        const open = useStore(rightSidebarOpen);
+        const state = open ? "expanded" : "collapsed";
 
         if (collapsible === "none") {
             return (
@@ -202,27 +197,41 @@ const Sidebar = React.forwardRef<
 
         if (isMobile) {
             return (
-                <Sheet
-                    open={openMobile}
-                    onOpenChange={setOpenMobile}
-                    {...props}
-                >
-                    <SheetContent
+                <>
+                    {open && (
+                        <button
+                            type="button"
+                            aria-label="Close sidebar"
+                            className="fixed inset-0 z-[1031] bg-black/80"
+                            onClick={() => rightSidebarOpen.set(false)}
+                        />
+                    )}
+                    <div
                         data-sidebar="sidebar"
                         data-mobile="true"
-                        className="w-full bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden z-[1035]"
+                        className={cn(
+                            "fixed inset-y-0 z-[1035] flex h-full w-[--sidebar-width] max-w-[85vw] flex-col bg-sidebar p-0 text-sidebar-foreground shadow-lg transition-transform duration-300",
+                            side === "right" ? "right-0" : "left-0",
+                            open
+                                ? "translate-x-0"
+                                : side === "right"
+                                  ? "translate-x-full"
+                                  : "-translate-x-full",
+                            className,
+                        )}
                         style={
                             {
                                 "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
                             } as React.CSSProperties
                         }
-                        side={side}
+                        ref={ref}
+                        {...props}
                     >
                         <div className="flex h-full w-full flex-col">
                             {children}
                         </div>
-                    </SheetContent>
-                </Sheet>
+                    </div>
+                </>
             );
         }
 
@@ -248,7 +257,7 @@ const Sidebar = React.forwardRef<
                 />
                 <div
                     className={cn(
-                        "duration-200 fixed inset-y-0 z-10 hidden h-svh w-[--sidebar-width] transition-[left,right,width] ease-linear md:flex",
+                        "duration-200 fixed inset-y-0 z-[1035] hidden h-svh w-[--sidebar-width] transition-[left,right,width] ease-linear md:flex",
                         side === "left"
                             ? "left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]"
                             : "right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]",
@@ -277,7 +286,7 @@ const SidebarTrigger = React.forwardRef<
     React.ElementRef<typeof Button>,
     React.ComponentProps<typeof Button>
 >(({ className, onClick, ...props }, ref) => {
-    const { toggleSidebar } = useStore(SidebarContext);
+    const open = useStore(rightSidebarOpen);
 
     return (
         <button
@@ -291,7 +300,7 @@ const SidebarTrigger = React.forwardRef<
             )}
             onClick={(event) => {
                 onClick?.(event);
-                toggleSidebar();
+                rightSidebarOpen.set(!open);
             }}
             {...props}
         >

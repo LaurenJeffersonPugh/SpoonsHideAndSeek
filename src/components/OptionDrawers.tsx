@@ -27,7 +27,6 @@ import {
     followMe,
     hiderMode,
     hidingRadius,
-    hidingRadiusUnits,
     hidingZone,
     includeDefaultStations,
     leafletMapContext,
@@ -94,18 +93,8 @@ export const OptionDrawers = ({ className }: { className?: string }) => {
     const [isOptionsOpen, setOptionsOpen] = useState(false);
 
     useEffect(() => {
-        const currentDefault = $defaultUnit;
-
-        if (!hasSyncedInitialUnit.current) {
-            hasSyncedInitialUnit.current = true;
-            if (hidingRadiusUnits.get() !== currentDefault) {
-                hidingRadiusUnits.set(currentDefault);
-            }
-        } else if (lastDefaultUnit.current !== currentDefault) {
-            hidingRadiusUnits.set(currentDefault);
-        }
-
-        lastDefaultUnit.current = currentDefault;
+        hasSyncedInitialUnit.current = true;
+        lastDefaultUnit.current = $defaultUnit;
     }, [$defaultUnit]);
 
     useEffect(() => {

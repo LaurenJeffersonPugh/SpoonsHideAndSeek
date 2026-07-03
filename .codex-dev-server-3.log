@@ -1,0 +1,17 @@
+19:34:17 [types] Generated 1ms
+19:34:17 [content] Syncing content
+19:34:17 [content] Synced content
+19:34:17 [vite] Port 4321 is in use, trying another one...
+19:34:17 [vite] Port 4322 is in use, trying another one...
+19:34:17 [vite] Port 4323 is in use, trying another one...
+
+ astro  v5.7.13 ready in 1880 ms
+
+┃ Local    http://localhost:4324/JetLagHideAndSeek
+┃ Network  use --host to expose
+
+19:34:17 watching for file changes...
+19:34:43 [200] / 177ms
+19:35:56 [200] / 32ms
+19:37:13 Configuration file updated. Restarting...
+19:37:13 [vite] Re-optimizing dependencies because vite config has changed

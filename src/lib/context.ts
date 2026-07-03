@@ -101,7 +101,7 @@ export const hiderMode = persistentAtom<
 export const triggerLocalRefresh = atom<number>(0);
 export const displayHidingZones = persistentAtom<boolean>(
     "displayHidingZones",
-    false,
+    true,
     {
         encode: JSON.stringify,
         decode: JSON.parse,
@@ -117,7 +117,7 @@ export const displayHidingZonesOptions = persistentAtom<string[]>(
 );
 export const displayHidingZonesStyle = persistentAtom<
     "zones" | "stations" | "no-overlap" | "no-display"
->("displayHidingZonesStyle", "zones");
+>("displayHidingZonesStyle", "no-overlap");
 export const questionFinishedMapData = atom<any>(null);
 
 export const trainStations = atom<StationCircle[]>([]);
@@ -131,7 +131,7 @@ onSet(trainStations, ({ newValue }) => {
 
 export const useCustomStations = persistentAtom<boolean>(
     "useCustomStations",
-    false,
+    true,
     {
         encode: JSON.stringify,
         decode: JSON.parse,
@@ -147,7 +147,7 @@ export const customStations = persistentAtom<CustomStation[]>(
 );
 export const mergeDuplicates = persistentAtom<boolean>(
     "removeDuplicates",
-    false,
+    true,
     {
         encode: JSON.stringify,
         decode: JSON.parse,
@@ -169,13 +169,13 @@ export const animateMapMovements = persistentAtom<boolean>(
         decode: JSON.parse,
     },
 );
-export const hidingRadius = persistentAtom<number>("hidingRadius", 0.5, {
+export const hidingRadius = persistentAtom<number>("hidingRadius", 500, {
     encode: JSON.stringify,
     decode: JSON.parse,
 });
 export const hidingRadiusUnits = persistentAtom<Units>(
     "hidingRadiusUnits",
-    "miles",
+    "meters",
     {
         encode: JSON.stringify,
         decode: JSON.parse,

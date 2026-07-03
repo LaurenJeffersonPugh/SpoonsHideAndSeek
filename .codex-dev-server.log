@@ -1,0 +1,76 @@
+15:28:05 [types] Generated 1ms
+15:28:05 [content] Syncing content
+15:28:05 [content] Synced content
+15:28:05 [vite] Port 4321 is in use, trying another one...
+
+ astro  v5.7.13 ready in 433 ms
+
+┃ Local    http://localhost:4322/JetLagHideAndSeek
+┃ Network  use --host to expose
+
+15:28:05 watching for file changes...
+15:28:48 [200] / 158ms
+15:37:18 [200] / 44ms
+15:37:20 [vite] [32m✨ new dependencies optimized: [33m@arcgis/core/core/units.js, @arcgis/core/unionTypes.js[32m[39m
+15:37:20 [vite] [32m✨ optimized dependencies changed. reloading[39m
+15:37:20 [200] / 10ms
+15:39:28 [watch] /src/components/Map.tsx, /src/styles/globals.css
+15:39:28 [watch] src/components/Map.tsx
+15:39:41 [watch] /src/components/Map.tsx, /src/styles/globals.css
+15:39:41 [watch] src/components/Map.tsx
+15:39:47 [watch] /src/components/Map.tsx, /src/styles/globals.css
+15:39:47 [watch] src/components/Map.tsx
+19:24:14 [watch] /src/components/Map.tsx, /src/styles/globals.css
+19:24:14 [watch] src/components/Map.tsx
+19:24:14 [200] / 136ms
+19:33:30 [watch] src/pages/index.astro
+19:33:30 [watch] src/pages/index.astro
+19:33:30 [200] / 47ms
+19:33:51 [watch] /src/components/Map.tsx, /src/styles/globals.css
+19:33:51 [watch] src/components/Map.tsx
+19:35:43 [watch] /src/components/Map.tsx, /src/styles/globals.css
+19:35:43 [watch] src/components/Map.tsx
+19:36:33 [200] / 38ms
+19:36:35 [200] / 8ms
+19:37:13 Configuration file updated. Restarting...
+19:37:13 [vite] Re-optimizing dependencies because vite config has changed
+19:37:13 [content] Syncing content
+19:37:13 [content] Synced content
+19:37:13 [types] Generated 267ms
+19:37:13 [vite] Re-optimizing dependencies because vite config has changed
+19:37:13 [vite] Port 4321 is in use, trying another one...
+19:37:15 [200] / 60ms
+19:37:17 [vite] [32m✨ new dependencies optimized: [33m@arcgis/core/core/units.js, @arcgis/core/unionTypes.js[32m[39m
+19:37:17 [vite] [32m✨ optimized dependencies changed. reloading[39m
+19:37:17 [200] / 9ms
+21:30:22 [watch] src/pages/index.astro
+21:30:22 [watch] src/pages/index.astro
+21:31:12 [watch] src/components/ZoneSidebar.tsx
+21:31:12 [watch] src/components/ZoneSidebar.tsx
+21:31:19 [watch] src/components/ZoneSidebar.tsx
+21:31:19 [watch] src/components/ZoneSidebar.tsx
+21:33:52 [watch] src/lib/context.ts
+21:33:52 [watch] src/lib/context.ts
+21:34:02 [watch] src/components/ZoneSidebar.tsx
+21:34:02 [watch] src/components/ZoneSidebar.tsx
+21:34:12 [watch] src/components/ZoneSidebar.tsx
+21:34:12 [watch] src/components/ZoneSidebar.tsx
+21:34:32 [watch] src/components/ZoneSidebar.tsx
+21:34:32 [watch] src/components/ZoneSidebar.tsx
+21:34:43 [watch] src/lib/context.ts
+21:34:43 [watch] src/lib/context.ts
+21:34:46 [watch] src/components/ZoneSidebar.tsx
+21:34:46 [watch] src/components/ZoneSidebar.tsx
+21:34:53 [watch] src/components/ZoneSidebar.tsx
+21:34:53 [watch] src/components/ZoneSidebar.tsx
+21:36:45 [watch] src/components/ZoneSidebar.tsx
+21:36:45 [watch] src/components/ZoneSidebar.tsx
+21:36:54 [watch] src/components/ZoneSidebar.tsx
+21:36:54 [watch] src/components/ZoneSidebar.tsx
+21:37:09 Configuration file updated. Restarting...
+21:37:09 [vite] Re-optimizing dependencies because vite config has changed
+21:37:09 [content] Syncing content
+21:37:09 [content] Synced content
+21:37:09 [types] Generated 254ms
+21:37:09 [vite] Re-optimizing dependencies because vite config has changed
+[ELIFECYCLE] Command failed with exit code 4294967295.

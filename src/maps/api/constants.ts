@@ -1,3 +1,5 @@
+import type { FeatureCollection, Polygon } from "geojson";
+
 import type { APILocations } from "@/maps/schema";
 
 export const OVERPASS_API = "https://overpass-api.de/api/interpreter";
@@ -42,7 +44,7 @@ export const LOCATION_FIRST_TAG: {
     park: "leisure",
 };
 
-export const BLANK_GEOJSON = {
+export const BLANK_GEOJSON: FeatureCollection<Polygon> = {
     type: "FeatureCollection",
     features: [
         {

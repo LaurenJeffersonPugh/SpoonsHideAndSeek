@@ -4,9 +4,11 @@ import "leaflet-contextmenu";
 
 import { useStore } from "@nanostores/react";
 import * as turf from "@turf/turf";
+import type { Feature, FeatureCollection, Point } from "geojson";
+import type { MultiPolygon, Polygon as GeoJSONPolygon } from "geojson";
 import * as L from "leaflet";
-import { useEffect, useMemo } from "react";
-import { MapContainer, ScaleControl, TileLayer } from "react-leaflet";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { MapContainer, ScaleControl, TileLayer, useMap } from "react-leaflet";
 import { toast } from "react-toastify";
 
 import {
@@ -32,7 +34,7 @@ import {
 import { cn } from "@/lib/utils";
 import { applyQuestionsToMapGeoData, holedMask } from "@/maps";
 import { hiderifyQuestion } from "@/maps";
-import { clearCache, determineMapBoundaries } from "@/maps/api";
+import { CacheType, clearCache, determineMapBoundaries } from "@/maps/api";
 
 import { DraggableMarkers } from "./DraggableMarkers";
 import { LeafletFullScreenButton } from "./LeafletFullScreenButton";
@@ -112,6 +114,453 @@ const getTileLayer = (tileLayer: string, thunderforestApiKey: string) => {
             minZoom={2}
             noWrap
         />
+    );
+};
+
+type SpoonsStopProperties = {
+    name?: string;
+    "icon-color"?: string;
+};
+
+type SpoonsBoundaryGeometry = GeoJSONPolygon | MultiPolygon;
+type SpoonsStopFeature = Feature<Point, SpoonsStopProperties>;
+type SpoonsStopCollection = FeatureCollection<Point, SpoonsStopProperties>;
+type SpoonsBoundaryCollection = FeatureCollection<SpoonsBoundaryGeometry>;
+type SpoonsStopType = "Bus stop" | "Metro / rail / ferry stop";
+
+type SpoonsLocation = {
+    latitude: number;
+    longitude: number;
+    accuracy: number;
+    timestamp: number;
+};
+
+type NearbySpoonsStop = {
+    distanceMetres: number;
+    feature: SpoonsStopFeature;
+    stopType: SpoonsStopType;
+};
+
+const spoonsDataUrl = (filename: string) =>
+    `${import.meta.env.BASE_URL.replace(/\/?$/, "/")}data/${filename}`;
+
+const isBusStop = (feature: Feature<Point, SpoonsStopProperties>) =>
+    feature.properties?.["icon-color"] === "#9c27b0";
+
+const getSpoonsStopType = (feature: SpoonsStopFeature): SpoonsStopType =>
+    isBusStop(feature) ? "Bus stop" : "Metro / rail / ferry stop";
+
+const formatDistanceMetres = (distanceMetres: number) =>
+    `${Math.round(distanceMetres)} m`;
+
+const getLocationErrorMessage = (error: GeolocationPositionError) => {
+    switch (error.code) {
+        case error.PERMISSION_DENIED:
+            return "Location permission is blocked. Allow location access for this site.";
+        case error.POSITION_UNAVAILABLE:
+            return "Your current location is unavailable. Check location services.";
+        case error.TIMEOUT:
+            return "Still waiting for a GPS fix. Try moving near a window or tap Retry GPS.";
+        default:
+            return error.message;
+    }
+};
+
+const createStopPopup = (name: string, stopType: SpoonsStopType) => {
+    const container = document.createElement("div");
+    const title = document.createElement("strong");
+    const type = document.createElement("div");
+
+    title.textContent = name;
+    type.textContent = stopType;
+
+    container.append(title, type);
+
+    return container;
+};
+
+const loadSpoonsGameData = async (signal: AbortSignal) => {
+    const [boundaryResponse, stopsResponse] = await Promise.all([
+        fetch(spoonsDataUrl("game-boundary.geojson"), {
+            signal,
+        }),
+        fetch(spoonsDataUrl("stops.geojson"), {
+            signal,
+        }),
+    ]);
+
+    if (!boundaryResponse.ok) {
+        throw new Error(
+            `Failed to load game-boundary.geojson: ${boundaryResponse.status} ${boundaryResponse.statusText}`,
+        );
+    }
+
+    if (!stopsResponse.ok) {
+        throw new Error(
+            `Failed to load stops.geojson: ${stopsResponse.status} ${stopsResponse.statusText}`,
+        );
+    }
+
+    const boundaryGeoJson =
+        (await boundaryResponse.json()) as SpoonsBoundaryCollection;
+    const stopsGeoJson = (await stopsResponse.json()) as SpoonsStopCollection;
+
+    return { boundaryGeoJson, stopsGeoJson };
+};
+
+const SpoonsGameLayers = () => {
+    const map = useMap();
+
+    useEffect(() => {
+        const controller = new AbortController();
+        let boundaryLayer: L.GeoJSON | null = null;
+        let stopsLayer: L.GeoJSON | null = null;
+
+        const loadSpoonsGameLayers = async () => {
+            try {
+                const { boundaryGeoJson, stopsGeoJson } =
+                    await loadSpoonsGameData(controller.signal);
+
+                if (controller.signal.aborted) return;
+
+                mapGeoJSON.set(boundaryGeoJson);
+                polyGeoJSON.set(boundaryGeoJson);
+                void clearCache(CacheType.ZONE_CACHE);
+                questions.set([...questions.get()]);
+
+                boundaryLayer = L.geoJSON(boundaryGeoJson, {
+                    style: {
+                        color: "#111827",
+                        fillColor: "#111827",
+                        fillOpacity: 0.05,
+                        weight: 3,
+                    },
+                }).addTo(map);
+
+                const boundaryBounds = boundaryLayer.getBounds();
+                if (boundaryBounds.isValid()) {
+                    map.fitBounds(boundaryBounds);
+                }
+
+                stopsLayer = L.geoJSON(stopsGeoJson, {
+                    pointToLayer(feature, latlng) {
+                        const stopFeature = feature as Feature<
+                            Point,
+                            SpoonsStopProperties
+                        >;
+                        const busStop = isBusStop(stopFeature);
+                        const fillColor = busStop ? "#9c27b0" : "#ffea00";
+
+                        return L.circleMarker(latlng, {
+                            color: "#111827",
+                            fillColor,
+                            fillOpacity: 0.9,
+                            radius: 5,
+                            weight: 1,
+                        });
+                    },
+                    onEachFeature(feature, layer) {
+                        const stopFeature = feature as SpoonsStopFeature;
+                        const stopType = getSpoonsStopType(stopFeature);
+
+                        layer.bindPopup(
+                            createStopPopup(
+                                stopFeature.properties?.name ?? "Unnamed stop",
+                                stopType,
+                            ),
+                        );
+                    },
+                }).addTo(map);
+            } catch (error) {
+                if (controller.signal.aborted) return;
+
+                console.error("Failed to load Spoons game layers", error);
+            }
+        };
+
+        void loadSpoonsGameLayers();
+
+        return () => {
+            controller.abort();
+
+            if (boundaryLayer) {
+                map.removeLayer(boundaryLayer);
+            }
+
+            if (stopsLayer) {
+                map.removeLayer(stopsLayer);
+            }
+        };
+    }, [map]);
+
+    return null;
+};
+
+const SpoonsLocationStatus = () => {
+    const map = useMap();
+    const markerRef = useRef<L.Marker | null>(null);
+    const accuracyCircleRef = useRef<L.Circle | null>(null);
+    const [location, setLocation] = useState<SpoonsLocation | null>(null);
+    const [locationError, setLocationError] = useState<string | null>(null);
+    const [boundaryGeoJson, setBoundaryGeoJson] =
+        useState<SpoonsBoundaryCollection | null>(null);
+    const [stopsGeoJson, setStopsGeoJson] =
+        useState<SpoonsStopCollection | null>(null);
+    const [dataError, setDataError] = useState<string | null>(null);
+    const [gpsRetryCount, setGpsRetryCount] = useState(0);
+
+    useEffect(() => {
+        if (!navigator.geolocation) {
+            setLocationError("Geolocation is not supported by this browser.");
+            return;
+        }
+
+        const watchId = navigator.geolocation.watchPosition(
+            (position) => {
+                setLocation({
+                    latitude: position.coords.latitude,
+                    longitude: position.coords.longitude,
+                    accuracy: position.coords.accuracy,
+                    timestamp: position.timestamp,
+                });
+                setLocationError(null);
+            },
+            (error) => {
+                setLocationError(getLocationErrorMessage(error));
+            },
+            {
+                enableHighAccuracy: true,
+                maximumAge: 10000,
+                timeout: 60000,
+            },
+        );
+
+        return () => navigator.geolocation.clearWatch(watchId);
+    }, [gpsRetryCount]);
+
+    useEffect(() => {
+        const controller = new AbortController();
+
+        const loadSpoonsLocationData = async () => {
+            try {
+                const { boundaryGeoJson, stopsGeoJson } =
+                    await loadSpoonsGameData(controller.signal);
+
+                if (controller.signal.aborted) return;
+
+                setBoundaryGeoJson(boundaryGeoJson);
+                setStopsGeoJson(stopsGeoJson);
+                setDataError(null);
+            } catch (error) {
+                if (controller.signal.aborted) return;
+
+                const message =
+                    error instanceof Error ? error.message : String(error);
+                setDataError(message);
+                console.error(
+                    "Failed to load Spoons location status data",
+                    error,
+                );
+            }
+        };
+
+        void loadSpoonsLocationData();
+
+        return () => controller.abort();
+    }, []);
+
+    useEffect(() => {
+        if (!location) return;
+
+        const latLng: L.LatLngExpression = [
+            location.latitude,
+            location.longitude,
+        ];
+
+        if (markerRef.current) {
+            markerRef.current.setLatLng(latLng);
+        } else {
+            markerRef.current = L.marker(latLng, {
+                icon: L.divIcon({
+                    html: '<div class="w-4 h-4 rounded-full bg-sky-600 border-2 border-white shadow ring-2 ring-sky-600"></div>',
+                    className: "",
+                    iconAnchor: [8, 8],
+                }),
+                zIndexOffset: 1200,
+            }).addTo(map);
+        }
+
+        if (accuracyCircleRef.current) {
+            accuracyCircleRef.current.setLatLng(latLng);
+            accuracyCircleRef.current.setRadius(location.accuracy);
+        } else {
+            accuracyCircleRef.current = L.circle(latLng, {
+                radius: location.accuracy,
+                color: "#0284c7",
+                fillColor: "#38bdf8",
+                fillOpacity: 0.12,
+                opacity: 0.45,
+                weight: 1,
+            }).addTo(map);
+        }
+    }, [location, map]);
+
+    useEffect(() => {
+        return () => {
+            if (markerRef.current) {
+                map.removeLayer(markerRef.current);
+                markerRef.current = null;
+            }
+
+            if (accuracyCircleRef.current) {
+                map.removeLayer(accuracyCircleRef.current);
+                accuracyCircleRef.current = null;
+            }
+        };
+    }, [map]);
+
+    const status = useMemo(() => {
+        if (!location || !boundaryGeoJson || !stopsGeoJson) {
+            return {
+                inBoundary: null as boolean | null,
+                nearbyStops: [] as NearbySpoonsStop[],
+                valid: null as boolean | null,
+            };
+        }
+
+        const playerPoint = turf.point([location.longitude, location.latitude]);
+        const inBoundary = boundaryGeoJson.features.some((feature) =>
+            turf.booleanPointInPolygon(playerPoint, feature),
+        );
+        const nearbyStops = stopsGeoJson.features
+            .map((feature) => ({
+                distanceMetres: turf.distance(playerPoint, feature, {
+                    units: "meters",
+                }),
+                feature,
+                stopType: getSpoonsStopType(feature),
+            }))
+            .filter((stop) => stop.distanceMetres <= 500)
+            .sort((a, b) => a.distanceMetres - b.distanceMetres);
+
+        return {
+            inBoundary,
+            nearbyStops,
+            valid: inBoundary && nearbyStops.length > 0,
+        };
+    }, [boundaryGeoJson, location, stopsGeoJson]);
+
+    const visibleStops = status.nearbyStops.slice(0, 8);
+    const hiddenStopCount = Math.max(status.nearbyStops.length - 8, 0);
+    const gameDataLoaded = Boolean(boundaryGeoJson && stopsGeoJson);
+    const boundaryText =
+        status.inBoundary === null
+            ? "Unknown"
+            : status.inBoundary
+              ? "Yes"
+              : "No";
+    const nearbyStopsText =
+        status.valid === null
+            ? "Unknown"
+            : status.nearbyStops.length > 0
+              ? "Yes"
+              : "No";
+    const lastChecked = location
+        ? new Date(location.timestamp).toLocaleTimeString()
+        : "Unknown";
+    const statusLabel =
+        status.valid === null ? "UNKNOWN" : status.valid ? "VALID" : "INVALID";
+    const waitingText = !gameDataLoaded
+        ? "Loading game data."
+        : !location
+          ? "Game data loaded. Waiting for GPS fix."
+          : "No valid stops within 500 m.";
+
+    return (
+        <div className="pointer-events-none absolute inset-x-2 bottom-3 z-[1000] flex justify-center sm:inset-x-auto sm:left-3 sm:right-3">
+            <div className="pointer-events-auto max-h-[42vh] w-full max-w-md overflow-y-auto rounded-md border border-slate-300 bg-white/95 p-3 text-xs text-slate-900 shadow-xl backdrop-blur">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                    <div className="font-poppins text-sm font-semibold">
+                        Hiding status
+                    </div>
+                    <div
+                        className={cn(
+                            "rounded px-2 py-1 text-xs font-bold text-white",
+                            status.valid
+                                ? "bg-emerald-700"
+                                : status.valid === false
+                                  ? "bg-red-700"
+                                  : "bg-slate-600",
+                        )}
+                    >
+                        {statusLabel}
+                    </div>
+                </div>
+                <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1">
+                    <span>In game boundary</span>
+                    <span className="font-medium">{boundaryText}</span>
+                    <span>Within 500 m of a valid stop</span>
+                    <span className="font-medium">{nearbyStopsText}</span>
+                    <span>GPS accuracy</span>
+                    <span className="font-medium">
+                        {location
+                            ? `±${Math.round(location.accuracy)}m`
+                            : "Unknown"}
+                    </span>
+                    <span>Last checked</span>
+                    <span className="font-medium">{lastChecked}</span>
+                    <span>Valid stops within 500 m</span>
+                    <span className="font-medium">
+                        {status.valid === null
+                            ? "Unknown"
+                            : status.nearbyStops.length}
+                    </span>
+                </div>
+                {(locationError || dataError) && (
+                    <div className="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-amber-900">
+                        {locationError ?? dataError}
+                        {locationError && (
+                            <button
+                                type="button"
+                                className="ml-2 rounded border border-amber-500 px-2 py-0.5 text-xs font-semibold"
+                                onClick={() => {
+                                    setLocationError(null);
+                                    setGpsRetryCount((count) => count + 1);
+                                }}
+                            >
+                                Retry GPS
+                            </button>
+                        )}
+                    </div>
+                )}
+                <div className="mt-2 border-t border-slate-200 pt-2">
+                    {visibleStops.length > 0 ? (
+                        <div className="space-y-1">
+                            {visibleStops.map((stop) => (
+                                <div
+                                    key={`${stop.feature.geometry.coordinates.join(",")}-${stop.feature.properties?.name}`}
+                                >
+                                    {stop.feature.properties?.name ??
+                                        "Unnamed stop"}{" "}
+                                    —{" "}
+                                    {formatDistanceMetres(stop.distanceMetres)}{" "}
+                                    — {stop.stopType}
+                                </div>
+                            ))}
+                            {hiddenStopCount > 0 && (
+                                <div className="font-medium">
+                                    + {hiddenStopCount} more
+                                </div>
+                            )}
+                        </div>
+                    ) : status.valid === null ? (
+                        <div className="text-slate-600">{waitingText}</div>
+                    ) : (
+                        <div className="text-slate-600">{waitingText}</div>
+                    )}
+                </div>
+            </div>
+        </div>
     );
 };
 
@@ -369,6 +818,8 @@ export const Map = ({ className }: { className?: string }) => {
                 ]}
             >
                 {getTileLayer($baseTileLayer, $thunderforestApiKey)}
+                <SpoonsGameLayers />
+                <SpoonsLocationStatus />
                 <DraggableMarkers />
                 <div className="leaflet-top leaflet-right">
                     <div className="leaflet-control flex-col flex gap-2">

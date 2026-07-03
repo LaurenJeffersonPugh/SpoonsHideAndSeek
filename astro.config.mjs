@@ -1,5 +1,4 @@
 // @ts-check
-import partytown from "@astrojs/partytown";
 import react from "@astrojs/react";
 import tailwind from "@astrojs/tailwind";
 import AstroPWA from "@vite-pwa/astro";
@@ -11,11 +10,6 @@ export default defineConfig({
         react(),
         tailwind({
             applyBaseStyles: false,
-        }),
-        partytown({
-            config: {
-                forward: ["dataLayer.push"],
-            },
         }),
         AstroPWA({
             manifest: {
@@ -46,6 +40,22 @@ export default defineConfig({
     ],
     devToolbar: {
         enabled: false,
+    },
+    vite: {
+        optimizeDeps: {
+            // @arcgis/core lazily loads internal chunks (e.g. apiConverter) via
+            // runtime dynamic import() from operator .load() calls. Vite's dep
+            // scanner never sees these at startup, so pre-bundling rewrites the
+            // imports to /node_modules/.vite/deps chunks that were never emitted
+            // (404). Excluding it makes Vite serve arcgis ESM directly, so its
+            // internal dynamic imports resolve against the real files.
+            exclude: ["@arcgis/core"],
+        },
+        server: {
+            watch: {
+                ignored: ["**/source-data/**"],
+            },
+        },
     },
     site: "https://taibeled.github.io",
     base: "JetLagHideAndSeek",

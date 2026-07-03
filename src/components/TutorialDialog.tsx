@@ -262,6 +262,7 @@ const tutorialSteps: TutorialStep[] = [
                             questionKey={Math.random()}
                             data={{
                                 collapsed: false,
+                                hidden: false,
                                 drag: true,
                                 lat: 35.6762,
                                 lng: 139.6503,
@@ -312,6 +313,7 @@ const tutorialSteps: TutorialStep[] = [
                             questionKey={Math.random()}
                             data={{
                                 collapsed: false,
+                                hidden: false,
                                 drag: true,
                                 latA: 35.6762,
                                 lngA: 139.6503,
@@ -343,6 +345,7 @@ const tutorialSteps: TutorialStep[] = [
                 between points on the map
             </>
         ),
+        isDescription: false,
         position: "center",
     },
     {
@@ -359,6 +362,7 @@ const tutorialSteps: TutorialStep[] = [
                             questionKey={Math.random()}
                             data={{
                                 collapsed: false,
+                                hidden: false,
                                 drag: true,
                                 lat: 35.6762,
                                 lng: 139.6503,
@@ -393,6 +397,7 @@ const tutorialSteps: TutorialStep[] = [
                 place or edit location points
             </>
         ),
+        isDescription: false,
         position: "center",
     },
     {
@@ -410,6 +415,7 @@ const tutorialSteps: TutorialStep[] = [
                             questionKey={Math.random()}
                             data={{
                                 collapsed: false,
+                                hidden: false,
                                 drag: true,
                                 lat: 35.6762,
                                 lng: 139.6503,
@@ -442,6 +448,7 @@ const tutorialSteps: TutorialStep[] = [
                 <br />• Useful for large-scale geographic questions
             </>
         ),
+        isDescription: false,
         position: "center",
     },
     {
@@ -492,6 +499,7 @@ const tutorialSteps: TutorialStep[] = [
                             questionKey={Math.random()}
                             data={{
                                 collapsed: false,
+                                hidden: false,
                                 drag: true,
                                 lat: 35.6762,
                                 lng: 139.6503,
@@ -527,6 +535,7 @@ const tutorialSteps: TutorialStep[] = [
                 was closer or farther from where the seeker was
             </>
         ),
+        isDescription: false,
         position: "center",
     },
     {
