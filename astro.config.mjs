@@ -57,6 +57,6 @@ export default defineConfig({
             },
         },
     },
-    site: "https://taibeled.github.io",
-    base: "JetLagHideAndSeek",
+    site: "https://laurenjeffersonpugh.github.io",
+    base: "SpoonsHideAndSeek",
 });
