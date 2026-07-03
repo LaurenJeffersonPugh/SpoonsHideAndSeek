@@ -15,6 +15,7 @@ import {
     fetchCoastline,
     findPlacesInZone,
     findPlacesSpecificInZone,
+    loadPregeneratedPois,
     LOCATION_FIRST_TAG,
     nearestToQuestion,
     prettifyLocation,
@@ -189,6 +190,16 @@ export const determineMeasuringBoundary = async (
         case "consulate-full":
         case "park-full": {
             const location = question.type.split("-full")[0] as APILocations;
+
+            try {
+                // Prefer the pre-generated local dataset (no Overpass call).
+                const points = await loadPregeneratedPois(location);
+                return [
+                    turf.combine(turf.featureCollection(points)).features[0],
+                ];
+            } catch {
+                // Local dataset missing — fall back to a live Overpass query.
+            }
 
             const data = await findPlacesInZone(
                 `[${LOCATION_FIRST_TAG[location]}=${location}]`,

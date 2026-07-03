@@ -19,6 +19,7 @@ import {
 import {
     findAdminBoundary,
     findPlacesInZone,
+    loadPregeneratedPois,
     LOCATION_FIRST_TAG,
     nearestToQuestion,
     prettifyLocation,
@@ -78,6 +79,13 @@ export const findMatchingPlaces = async (question: MatchingQuestion) => {
         case "consulate-full":
         case "park-full": {
             const location = question.type.split("-full")[0] as APILocations;
+
+            try {
+                // Prefer the pre-generated local dataset (no Overpass call).
+                return await loadPregeneratedPois(location);
+            } catch {
+                // Local dataset missing — fall back to a live Overpass query.
+            }
 
             const data = await findPlacesInZone(
                 `[${LOCATION_FIRST_TAG[location]}=${location}]`,

@@ -246,7 +246,7 @@ const ordinaryMatchingQuestionSchema = baseMatchingQuestionSchema.extend({
                 .literal("park-full")
                 .describe("Park Question (Small+Medium Games)"),
         ])
-        .default("airport"),
+        .default("cinema-full"),
 });
 
 const zoneMatchingQuestionsSchema = baseMatchingQuestionSchema.extend({
@@ -368,7 +368,7 @@ const ordinaryMeasuringQuestionSchema = baseMeasuringQuestionSchema.extend({
                 .literal("park-full")
                 .describe("Park Question (Small+Medium Games)"),
         ])
-        .default("coastline"),
+        .default("cinema-full"),
 });
 
 const hidingZoneMeasuringQuestionsSchema = baseMeasuringQuestionSchema.extend({

@@ -1,5 +1,5 @@
 import * as turf from "@turf/turf";
-import type { FeatureCollection, MultiPolygon } from "geojson";
+import type { Feature, FeatureCollection, MultiPolygon, Point } from "geojson";
 import _ from "lodash";
 import osmtogeojson from "osmtogeojson";
 import { toast } from "react-toastify";
@@ -10,6 +10,7 @@ import {
     polyGeoJSON,
 } from "@/lib/context";
 import { safeUnion } from "@/maps/geo-utils";
+import type { APILocations } from "@/maps/schema";
 
 import { cacheFetch, determineCache } from "./cache";
 import {
@@ -68,6 +69,28 @@ export const getOverpassData = async (
     return data;
 };
 
+const poiDataUrl = (location: string) =>
+    `${import.meta.env.BASE_URL.replace(/\/?$/, "/")}data/pois/${location}.geojson`;
+
+/**
+ * Loads a pre-generated POI dataset (see scripts/generate-spoons-pois.mjs)
+ * from the local /data/pois folder. Used by the "-full" matching/measuring
+ * questions so they don't hammer the public Overpass API at runtime. Throws if
+ * the dataset is missing, letting callers fall back to a live Overpass query.
+ */
+export const loadPregeneratedPois = async (
+    location: APILocations,
+): Promise<Feature<Point>[]> => {
+    const response = await fetch(poiDataUrl(location));
+    if (!response.ok) {
+        throw new Error(
+            `Failed to load pregenerated POIs for ${location}: ${response.status} ${response.statusText}`,
+        );
+    }
+    const geo = (await response.json()) as FeatureCollection<Point>;
+    return geo.features;
+};
+
 export const determineGeoJSON = async (
     osmId: string,
     osmTypeLetter: "W" | "R" | "N",
@@ -97,6 +120,44 @@ export const findTentacleLocations = async (
     question: EncompassingTentacleQuestionSchema,
     text: string = "Determining tentacle locations...",
 ) => {
+    try {
+        // Prefer the pre-generated local dataset: keep the named POIs within the
+        // question's radius of its point (no Overpass call).
+        const pois = await loadPregeneratedPois(
+            question.locationType as APILocations,
+        );
+        const center = turf.point([question.lng, question.lat]);
+        const radiusMeters = turf.convertLength(
+            question.radius,
+            question.unit,
+            "meters",
+        );
+        const response = turf.points([]);
+        for (const feature of pois) {
+            const name = feature.properties?.name;
+            if (!name) continue;
+            const [lon, lat] = feature.geometry.coordinates as [number, number];
+            if (
+                turf.distance(center, turf.point([lon, lat]), {
+                    units: "meters",
+                }) > radiusMeters
+            ) {
+                continue;
+            }
+            if (
+                response.features.find(
+                    (existing: any) => existing.properties.name === name,
+                )
+            ) {
+                continue;
+            }
+            response.features.push(turf.point([lon, lat], { name }));
+        }
+        return response;
+    } catch {
+        // Local dataset missing — fall back to a live Overpass query.
+    }
+
     const query = `
 [out:json][timeout:25];
 nwr["${LOCATION_FIRST_TAG[question.locationType]}"="${question.locationType}"](around:${turf.convertLength(

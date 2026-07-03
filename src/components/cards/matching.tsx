@@ -250,6 +250,14 @@ export const MatchingQuestionComponent = ({
                             .flatMap((x) =>
                                 determineUnionizedStrings(x.shape.type),
                             )
+                            // Spoons: surface the "(Small+Medium Games)"
+                            // variants (the "-full" types) first; the full-game
+                            // variants sort below them.
+                            .sort((a, b) => {
+                                const isFull = (o: any) =>
+                                    String(o._def.value).endsWith("-full");
+                                return Number(isFull(b)) - Number(isFull(a));
+                            })
                             .map((x) => [(x._def as any).value, x.description]),
                     )}
                     groups={matchingQuestionSchema.options

@@ -9,7 +9,8 @@
         "astro": "astro",
         "lint": "eslint --fix src && prettier . --write",
         "test": "vitest",
-        "generate:spoons-zones": "node scripts/generate-spoons-hiding-zones.mjs"
+        "generate:spoons-zones": "node scripts/generate-spoons-hiding-zones.mjs",
+        "generate:spoons-pois": "node scripts/generate-spoons-pois.mjs"
     },
     "dependencies": {
         "@arcgis/core": "^4.32.10",
