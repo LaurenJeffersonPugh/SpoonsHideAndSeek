@@ -7,6 +7,7 @@ import * as turf from "@turf/turf";
 import type { Feature, FeatureCollection, Point } from "geojson";
 import type { MultiPolygon, Polygon as GeoJSONPolygon } from "geojson";
 import * as L from "leaflet";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MapContainer, ScaleControl, TileLayer, useMap } from "react-leaflet";
 import { toast } from "react-toastify";
@@ -22,7 +23,6 @@ import {
     isLoading,
     leafletMapContext,
     mapGeoJSON,
-    mapGeoLocation,
     permanentOverlay,
     planningModeEnabled,
     polyGeoJSON,
@@ -308,6 +308,7 @@ const SpoonsLocationStatus = () => {
         useState<SpoonsStopCollection | null>(null);
     const [dataError, setDataError] = useState<string | null>(null);
     const [gpsRetryCount, setGpsRetryCount] = useState(0);
+    const [collapsed, setCollapsed] = useState(false);
 
     useEffect(() => {
         if (!navigator.geolocation) {
@@ -477,96 +478,129 @@ const SpoonsLocationStatus = () => {
           : "No valid stops within 500 m.";
 
     return (
-        <div className="pointer-events-none absolute inset-x-2 bottom-3 z-[1000] flex justify-center sm:inset-x-auto sm:left-3 sm:right-3">
-            <div className="pointer-events-auto max-h-[42vh] w-full max-w-md overflow-y-auto rounded-md border border-slate-300 bg-white/95 p-3 text-xs text-slate-900 shadow-xl backdrop-blur">
-                <div className="mb-2 flex items-center justify-between gap-3">
-                    <div className="font-poppins text-sm font-semibold">
-                        Hiding status
-                    </div>
-                    <div
+        <div className="pointer-events-none absolute inset-x-2 bottom-24 z-[1000] flex justify-center sm:inset-x-auto sm:bottom-3 sm:left-3 sm:right-3">
+            {collapsed ? (
+                <button
+                    type="button"
+                    onClick={() => setCollapsed(false)}
+                    aria-label="Expand hiding status"
+                    className="pointer-events-auto flex items-center gap-2 rounded-full border border-slate-300 bg-white/95 py-1.5 pl-3 pr-2 text-xs font-semibold text-slate-900 shadow-lg backdrop-blur"
+                >
+                    <span
                         className={cn(
-                            "rounded px-2 py-1 text-xs font-bold text-white",
+                            "h-2.5 w-2.5 shrink-0 rounded-full",
                             status.valid
-                                ? "bg-emerald-700"
+                                ? "bg-emerald-600"
                                 : status.valid === false
-                                  ? "bg-red-700"
-                                  : "bg-slate-600",
+                                  ? "bg-red-600"
+                                  : "bg-slate-500",
                         )}
-                    >
-                        {statusLabel}
-                    </div>
-                </div>
-                <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1">
-                    <span>In game boundary</span>
-                    <span className="font-medium">{boundaryText}</span>
-                    <span>Within 500 m of a valid stop</span>
-                    <span className="font-medium">{nearbyStopsText}</span>
-                    <span>GPS accuracy</span>
-                    <span className="font-medium">
-                        {location
-                            ? `±${Math.round(location.accuracy)}m`
-                            : "Unknown"}
-                    </span>
-                    <span>Last checked</span>
-                    <span className="font-medium">{lastChecked}</span>
-                    <span>Valid stops within 500 m</span>
-                    <span className="font-medium">
-                        {status.valid === null
-                            ? "Unknown"
-                            : status.nearbyStops.length}
-                    </span>
-                </div>
-                {(locationError || dataError) && (
-                    <div className="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-amber-900">
-                        {locationError ?? dataError}
-                        {locationError && (
+                    />
+                    <span>Hiding status: {statusLabel}</span>
+                    <ChevronUp className="h-4 w-4 text-slate-500" />
+                </button>
+            ) : (
+                <div className="pointer-events-auto max-h-[42vh] w-full max-w-md overflow-y-auto rounded-md border border-slate-300 bg-white/95 p-3 text-xs text-slate-900 shadow-xl backdrop-blur">
+                    <div className="flex items-center justify-between gap-3">
+                        <div className="font-poppins text-sm font-semibold">
+                            Hiding status
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <div
+                                className={cn(
+                                    "rounded px-2 py-1 text-xs font-bold text-white",
+                                    status.valid
+                                        ? "bg-emerald-700"
+                                        : status.valid === false
+                                          ? "bg-red-700"
+                                          : "bg-slate-600",
+                                )}
+                            >
+                                {statusLabel}
+                            </div>
                             <button
                                 type="button"
-                                className="ml-2 rounded border border-amber-500 px-2 py-0.5 text-xs font-semibold"
-                                onClick={() => {
-                                    setLocationError(null);
-                                    setGpsRetryCount((count) => count + 1);
-                                }}
+                                className="rounded p-1 text-slate-500 hover:bg-slate-100"
+                                aria-label="Collapse hiding status"
+                                onClick={() => setCollapsed(true)}
                             >
-                                Retry GPS
+                                <ChevronDown className="h-4 w-4" />
                             </button>
-                        )}
+                        </div>
                     </div>
-                )}
-                <div className="mt-2 border-t border-slate-200 pt-2">
-                    {visibleStops.length > 0 ? (
-                        <div className="space-y-1">
-                            {visibleStops.map((stop) => (
-                                <div
-                                    key={`${stop.feature.geometry.coordinates.join(",")}-${stop.feature.properties?.name}`}
+                    <div className="mt-2 grid grid-cols-[1fr_auto] gap-x-3 gap-y-1">
+                        <span>In game boundary</span>
+                        <span className="font-medium">{boundaryText}</span>
+                        <span>Within 500 m of a valid stop</span>
+                        <span className="font-medium">{nearbyStopsText}</span>
+                        <span>GPS accuracy</span>
+                        <span className="font-medium">
+                            {location
+                                ? `±${Math.round(location.accuracy)}m`
+                                : "Unknown"}
+                        </span>
+                        <span>Last checked</span>
+                        <span className="font-medium">{lastChecked}</span>
+                        <span>Valid stops within 500 m</span>
+                        <span className="font-medium">
+                            {status.valid === null
+                                ? "Unknown"
+                                : status.nearbyStops.length}
+                        </span>
+                    </div>
+                    {(locationError || dataError) && (
+                        <div className="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-amber-900">
+                            {locationError ?? dataError}
+                            {locationError && (
+                                <button
+                                    type="button"
+                                    className="ml-2 rounded border border-amber-500 px-2 py-0.5 text-xs font-semibold"
+                                    onClick={() => {
+                                        setLocationError(null);
+                                        setGpsRetryCount((count) => count + 1);
+                                    }}
                                 >
-                                    {stop.feature.properties?.name ??
-                                        "Unnamed stop"}{" "}
-                                    —{" "}
-                                    {formatDistanceMetres(stop.distanceMetres)}{" "}
-                                    — {stop.stopType}
-                                </div>
-                            ))}
-                            {hiddenStopCount > 0 && (
-                                <div className="font-medium">
-                                    + {hiddenStopCount} more
-                                </div>
+                                    Retry GPS
+                                </button>
                             )}
                         </div>
-                    ) : status.valid === null ? (
-                        <div className="text-slate-600">{waitingText}</div>
-                    ) : (
-                        <div className="text-slate-600">{waitingText}</div>
                     )}
+                    <div className="mt-2 border-t border-slate-200 pt-2">
+                        {visibleStops.length > 0 ? (
+                            <div className="space-y-1">
+                                {visibleStops.map((stop) => (
+                                    <div
+                                        key={`${stop.feature.geometry.coordinates.join(",")}-${stop.feature.properties?.name}`}
+                                    >
+                                        {stop.feature.properties?.name ??
+                                            "Unnamed stop"}{" "}
+                                        —{" "}
+                                        {formatDistanceMetres(
+                                            stop.distanceMetres,
+                                        )}{" "}
+                                        — {stop.stopType}
+                                    </div>
+                                ))}
+                                {hiddenStopCount > 0 && (
+                                    <div className="font-medium">
+                                        + {hiddenStopCount} more
+                                    </div>
+                                )}
+                            </div>
+                        ) : status.valid === null ? (
+                            <div className="text-slate-600">{waitingText}</div>
+                        ) : (
+                            <div className="text-slate-600">{waitingText}</div>
+                        )}
+                    </div>
                 </div>
-            </div>
+            )}
         </div>
     );
 };
 
 export const Map = ({ className }: { className?: string }) => {
     useStore(additionalMapGeoLocations);
-    const $mapGeoLocation = useStore(mapGeoLocation);
     const $questions = useStore(questions);
     const $baseTileLayer = useStore(baseTileLayer);
     const $thunderforestApiKey = useStore(thunderforestApiKey);
@@ -692,8 +726,8 @@ export const Map = ({ className }: { className?: string }) => {
     const displayMap = useMemo(
         () => (
             <MapContainer
-                center={$mapGeoLocation.geometry.coordinates}
-                zoom={5}
+                center={[54.9744, -1.5518]}
+                zoom={10}
                 className={cn("w-[500px] h-[500px]", className)}
                 ref={leafletMapContext.set}
                 // @ts-expect-error Typing doesn't update from react-contextmenu

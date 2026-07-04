@@ -49,18 +49,7 @@ const tutorialSteps: TutorialStep[] = [
                 <br />
                 If you&apos;re already familiar with the basics, feel free to{" "}
                 <strong>skip this tutorial by scrolling down</strong>. However,
-                this guide covers advanced features you might not know about. To
-                support this free tool, please consider{" "}
-                <a
-                    href="https://github.com/taibeled/JetLagHideAndSeek"
-                    className="text-blue-500 cursor-pointer"
-                    target="_blank"
-                    rel="noreferrer"
-                >
-                    starring the repository on GitHub
-                </a>{" "}
-                or sharing it with fellow Jet Lag fans! Both are free ways to
-                show your support.
+                this guide covers advanced features you might not know about.
             </>
         ),
         position: "center",
@@ -782,34 +771,7 @@ const tutorialSteps: TutorialStep[] = [
                 <br />
                 <br />
                 <strong>Need Help?</strong> This tutorial is always available
-                via the Tutorial button. Feel free to{" "}
-                <a
-                    href="https://github.com/taibeled/JetLagHideAndSeek/issues"
-                    className="text-blue-500 cursor-pointer"
-                    target="_blank"
-                    rel="noreferrer"
-                >
-                    report issues or request features on GitHub
-                </a>
-                . Your feedback helps improve the tool for everyone!
-                <br />
-                <br />
-                <strong>Support the Project:</strong> If this tool enhances your
-                Jet Lag games, please consider{" "}
-                <a
-                    href="https://github.com/taibeled/JetLagHideAndSeek"
-                    className="text-blue-500 cursor-pointer"
-                    target="_blank"
-                    rel="noreferrer"
-                >
-                    leaving a GitHub star
-                </a>{" "}
-                and sharing with fellow fans. Every star helps motivate
-                continued development! As of writing this, this project contains
-                over 12,002 lines of code. At a liberal estimate of 50 lines per
-                hour, us developers have collectively put over 240 hours into
-                this project! Giving us a free star is a great way to show your
-                appreciation for our work.
+                via the Tutorial button.
                 <br />
                 <br />
                 Happy hiding and seeking!
