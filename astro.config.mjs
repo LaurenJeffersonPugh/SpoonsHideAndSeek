@@ -13,27 +13,11 @@ export default defineConfig({
         }),
         AstroPWA({
             manifest: {
-                name: "Jet Lag Hide and Seek Map Generator",
-                short_name: "Map Generator",
+                name: "Spoons Hide and Seek",
+                short_name: "Spoons",
                 description:
-                    "Automatically generate maps for Jet Lag The Game: Hide and Seek with ease! Simply name the questions and watch the map eliminate hundreds of possibilities in seconds.",
-                icons: [
-                    {
-                        src: "https://taibeled.github.io/JetLagHideAndSeek/JLIcon.png",
-                        sizes: "1080x1080",
-                        type: "image/png",
-                    },
-                    {
-                        src: "https://taibeled.github.io/JetLagHideAndSeek/android-chrome-192x192.png",
-                        sizes: "192x192",
-                        type: "image/png",
-                    },
-                    {
-                        src: "https://taibeled.github.io/JetLagHideAndSeek/android-chrome-512x512.png",
-                        sizes: "512x512",
-                        type: "image/png",
-                    },
-                ],
+                    "A Jet Lag-style hide and seek map for Tyne and Wear. Shows the game boundary, valid public-transport stops, and every area within 500 m of a stop where you can legally hide.",
+                icons: [],
                 theme_color: "#1F2F3F",
             },
         }),

@@ -32,13 +32,13 @@ interface TutorialStep {
 
 const tutorialSteps: TutorialStep[] = [
     {
-        title: "Welcome to the Jet Lag Hide and Seek Map Generator!",
+        title: "Welcome to Spoons Hide and Seek!",
         content: (
             <>
-                Welcome to the the Hide and Seek map generator designed for the
-                Jet Lag Home Game! This detailed tutorial will walk you through
-                every feature, option, and question type available in this
-                powerful tool.
+                Welcome to Spoons Hide and Seek, a Jet Lag-style hide and seek
+                map for Tyne and Wear! This detailed tutorial will walk you
+                through every feature, option, and question type available in
+                this tool.
                 <br />
                 <br />
                 This tool is designed for those who have purchased the Jet Lag
