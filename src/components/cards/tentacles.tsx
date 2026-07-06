@@ -279,12 +279,18 @@ const TentacleLocationSelector = ({
         questionModified();
     }
 
+    const sortedFeatures = [...filteredFeatures].sort((a: any, b: any) =>
+        String(a.properties?.name ?? "").localeCompare(
+            String(b.properties?.name ?? ""),
+        ),
+    );
+
     return (
         <Select
             trigger="Location"
             options={{
                 false: "Not Within",
-                ...mapToObj(filteredFeatures, (feature: any) => [
+                ...mapToObj(sortedFeatures, (feature: any) => [
                     feature.properties.name,
                     feature.properties.name,
                 ]),

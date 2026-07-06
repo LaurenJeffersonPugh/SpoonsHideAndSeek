@@ -18,6 +18,8 @@ export const prettifyLocation = (
         switch (location) {
             case "library":
                 return "Libraries";
+            case "theme_park": // repurposed as Greggs — already plural-friendly
+                return "Greggs";
             default:
                 return prettifyLocation(location) + "s";
         }
@@ -33,7 +35,7 @@ export const prettifyLocation = (
         case "museum":
             return "Museum";
         case "theme_park":
-            return "Theme Park";
+            return "Greggs";
         case "zoo":
             return "Zoo";
         case "cinema":

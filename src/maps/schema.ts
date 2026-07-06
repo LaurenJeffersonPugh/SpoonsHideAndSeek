@@ -118,7 +118,7 @@ const radiusQuestionSchema = ordinaryBaseQuestionSchema.extend({
 });
 
 const tentacleLocationsFifteen = z.union([
-    z.literal("theme_park").describe("Theme Parks"),
+    z.literal("theme_park").describe("Greggs"),
     z.literal("zoo").describe("Zoos"),
     z.literal("aquarium").describe("Aquariums"),
 ]);
@@ -220,7 +220,7 @@ const ordinaryMatchingQuestionSchema = baseMatchingQuestionSchema.extend({
             z.literal("zoo-full").describe("Zoo Question (Small+Medium Games)"),
             z
                 .literal("theme_park-full")
-                .describe("Theme Park Question (Small+Medium Games)"),
+                .describe("Greggs Question (Small+Medium Games)"),
             z
                 .literal("peak-full")
                 .describe("Mountain Question (Small+Medium Games)"),
@@ -277,7 +277,7 @@ const homeGameMatchingQuestionsSchema = baseMatchingQuestionSchema.extend({
     type: z.union([
         z.literal("aquarium").describe("Aquarium Question"),
         z.literal("zoo").describe("Zoo Question"),
-        z.literal("theme_park").describe("Theme Park Question"),
+        z.literal("theme_park").describe("Greggs Question"),
         z.literal("peak").describe("Mountain Question"),
         z.literal("museum").describe("Museum Question"),
         z.literal("hospital").describe("Hospital Question"),
@@ -342,7 +342,7 @@ const ordinaryMeasuringQuestionSchema = baseMeasuringQuestionSchema.extend({
             z.literal("zoo-full").describe("Zoo Question (Small+Medium Games)"),
             z
                 .literal("theme_park-full")
-                .describe("Theme Park Question (Small+Medium Games)"),
+                .describe("Greggs Question (Small+Medium Games)"),
             z
                 .literal("peak-full")
                 .describe("Mountain Question (Small+Medium Games)"),
@@ -383,7 +383,7 @@ const homeGameMeasuringQuestionsSchema = baseMeasuringQuestionSchema.extend({
     type: z.union([
         z.literal("aquarium").describe("Aquarium Question"),
         z.literal("zoo").describe("Zoo Question"),
-        z.literal("theme_park").describe("Theme Park Question"),
+        z.literal("theme_park").describe("Greggs Question"),
         z.literal("peak").describe("Mountain Question"),
         z.literal("museum").describe("Museum Question"),
         z.literal("hospital").describe("Hospital Question"),

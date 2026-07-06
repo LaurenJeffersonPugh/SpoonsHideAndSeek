@@ -153,6 +153,27 @@ const getSpoonsStopType = (feature: SpoonsStopFeature): SpoonsStopType =>
 const formatDistanceMetres = (distanceMetres: number) =>
     `${Math.round(distanceMetres)} m`;
 
+// POI categories used by tentacle questions, with display labels. "theme_park"
+// is repurposed as Greggs (see scripts/generate-spoons-pois.mjs).
+const TENTACLE_CATEGORIES: { type: string; label: string }[] = [
+    { type: "theme_park", label: "Greggs" },
+    { type: "hospital", label: "Hospital" },
+    { type: "cinema", label: "Cinema" },
+    { type: "museum", label: "Museum" },
+    { type: "library", label: "Library" },
+    { type: "park", label: "Park" },
+    { type: "golf_course", label: "Golf course" },
+    { type: "zoo", label: "Zoo" },
+    { type: "aquarium", label: "Aquarium" },
+    { type: "peak", label: "Mountain" },
+    { type: "consulate", label: "Consulate" },
+];
+
+const formatPoiDistance = (distanceMetres: number) =>
+    distanceMetres < 1000
+        ? `${Math.round(distanceMetres)} m`
+        : `${(distanceMetres / 1609.344).toFixed(1)} mi`;
+
 const getLocationErrorMessage = (error: GeolocationPositionError) => {
     switch (error.code) {
         case error.PERMISSION_DENIED:
@@ -309,6 +330,13 @@ const SpoonsLocationStatus = () => {
     const [dataError, setDataError] = useState<string | null>(null);
     const [gpsRetryCount, setGpsRetryCount] = useState(0);
     const [collapsed, setCollapsed] = useState(false);
+    const [poiData, setPoiData] = useState<Record<
+        string,
+        SpoonsStopCollection
+    > | null>(null);
+    const [nearestCategory, setNearestCategory] = useState(
+        TENTACLE_CATEGORIES[0].type,
+    );
 
     useEffect(() => {
         if (!navigator.geolocation) {
@@ -366,6 +394,42 @@ const SpoonsLocationStatus = () => {
         };
 
         void loadSpoonsLocationData();
+
+        return () => controller.abort();
+    }, []);
+
+    useEffect(() => {
+        const controller = new AbortController();
+
+        const loadPoiData = async () => {
+            try {
+                const entries = await Promise.all(
+                    TENTACLE_CATEGORIES.map(async ({ type }) => {
+                        const response = await fetch(
+                            spoonsDataUrl(`pois/${type}.geojson`),
+                            { signal: controller.signal },
+                        );
+                        if (!response.ok) {
+                            throw new Error(
+                                `Failed to load pois/${type}.geojson: ${response.status}`,
+                            );
+                        }
+                        return [
+                            type,
+                            (await response.json()) as SpoonsStopCollection,
+                        ] as const;
+                    }),
+                );
+
+                if (controller.signal.aborted) return;
+                setPoiData(Object.fromEntries(entries));
+            } catch (error) {
+                if (controller.signal.aborted) return;
+                console.error("Failed to load nearest-place data", error);
+            }
+        };
+
+        void loadPoiData();
 
         return () => controller.abort();
     }, []);
@@ -450,6 +514,34 @@ const SpoonsLocationStatus = () => {
             valid: inBoundary && nearbyStops.length > 0,
         };
     }, [boundaryGeoJson, location, stopsGeoJson]);
+
+    const nearestPlaces = useMemo(() => {
+        if (!location || !poiData) return null;
+
+        const playerPoint = turf.point([location.longitude, location.latitude]);
+
+        return TENTACLE_CATEGORIES.map(({ type, label }) => {
+            let nearest: SpoonsStopFeature | null = null;
+            let nearestDistance = Infinity;
+
+            for (const feature of poiData[type]?.features ?? []) {
+                const distance = turf.distance(playerPoint, feature, {
+                    units: "meters",
+                });
+                if (distance < nearestDistance) {
+                    nearestDistance = distance;
+                    nearest = feature;
+                }
+            }
+
+            return {
+                type,
+                label,
+                name: nearest?.properties?.name ?? null,
+                distanceMetres: nearest ? nearestDistance : null,
+            };
+        });
+    }, [location, poiData]);
 
     const visibleStops = status.nearbyStops.slice(0, 8);
     const hiddenStopCount = Math.max(status.nearbyStops.length - 8, 0);
@@ -592,6 +684,67 @@ const SpoonsLocationStatus = () => {
                         ) : (
                             <div className="text-slate-600">{waitingText}</div>
                         )}
+                    </div>
+                    <div className="mt-2 border-t border-slate-200 pt-2">
+                        <div className="mb-1 font-semibold">
+                            Your nearest (for tentacle answers)
+                        </div>
+                        <select
+                            className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs"
+                            value={nearestCategory}
+                            onChange={(event) =>
+                                setNearestCategory(event.target.value)
+                            }
+                        >
+                            {TENTACLE_CATEGORIES.map(({ type, label }) => (
+                                <option key={type} value={type}>
+                                    {label}
+                                </option>
+                            ))}
+                        </select>
+                        <div className="mt-1">
+                            {(() => {
+                                if (!location) {
+                                    return (
+                                        <span className="text-slate-600">
+                                            Waiting for GPS fix.
+                                        </span>
+                                    );
+                                }
+                                if (!nearestPlaces) {
+                                    return (
+                                        <span className="text-slate-600">
+                                            Loading nearby places…
+                                        </span>
+                                    );
+                                }
+                                const selected = nearestPlaces.find(
+                                    (place) => place.type === nearestCategory,
+                                );
+                                if (!selected?.name) {
+                                    return (
+                                        <span className="text-slate-600">
+                                            None found nearby.
+                                        </span>
+                                    );
+                                }
+                                return (
+                                    <span>
+                                        <span className="font-medium">
+                                            {selected.name}
+                                        </span>
+                                        {selected.distanceMetres != null && (
+                                            <>
+                                                {" — "}
+                                                {formatPoiDistance(
+                                                    selected.distanceMetres,
+                                                )}
+                                            </>
+                                        )}
+                                    </span>
+                                );
+                            })()}
+                        </div>
                     </div>
                 </div>
             )}
