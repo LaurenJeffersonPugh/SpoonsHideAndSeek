@@ -35,7 +35,7 @@ import {
 import { cn } from "@/lib/utils";
 import { applyQuestionsToMapGeoData, holedMask } from "@/maps";
 import { hiderifyQuestion } from "@/maps";
-import { CacheType, clearCache, determineMapBoundaries } from "@/maps/api";
+import { CacheType, clearCache } from "@/maps/api";
 
 import { DraggableMarkers } from "./DraggableMarkers";
 import { LeafletFullScreenButton } from "./LeafletFullScreenButton";
@@ -647,17 +647,16 @@ export const Map = ({ className }: { className?: string }) => {
                 mapGeoData = polyGeoData;
                 mapGeoJSON.set(polyGeoData);
             } else {
-                await toast.promise(
-                    determineMapBoundaries()
-                        .then((x) => {
-                            mapGeoJSON.set(x);
-                            mapGeoData = x;
-                        })
-                        .catch((error) => console.log(error)),
-                    {
-                        error: "Error refreshing map data",
-                    },
-                );
+                try {
+                    const { boundaryGeoJson } = await loadSpoonsGameData(
+                        new AbortController().signal,
+                    );
+                    mapGeoJSON.set(boundaryGeoJson);
+                    polyGeoJSON.set(boundaryGeoJson);
+                    mapGeoData = boundaryGeoJson;
+                } catch (error) {
+                    console.log(error);
+                }
             }
         }
 
