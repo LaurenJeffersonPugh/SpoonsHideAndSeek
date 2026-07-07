@@ -15,6 +15,7 @@ import {
     TooltipProvider,
     TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useHideSidebarTriggers } from "@/hooks/use-hide-sidebar-triggers";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 
@@ -287,6 +288,7 @@ const SidebarTrigger = React.forwardRef<
     React.ComponentProps<typeof Button>
 >(({ className, onClick, ...props }, ref) => {
     const open = useStore(rightSidebarOpen);
+    const hidden = useHideSidebarTriggers();
 
     return (
         <button
@@ -296,6 +298,7 @@ const SidebarTrigger = React.forwardRef<
             className={cn(
                 "bg-white hover:bg-[#f4f4f4] text-black rounded-sm border-2 border-black border-opacity-30 cursor-pointer py-1 px-2",
                 "flex items-center gap-1",
+                hidden && "hidden",
                 className,
             )}
             onClick={(event) => {

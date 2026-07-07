@@ -394,3 +394,12 @@ export const allowGooglePlusCodes = persistentAtom<boolean>(
         decode: JSON.parse,
     },
 );
+
+// Live GPS position of the player, mirrored from the map's geolocation watch
+// (see SpoonsLocationStatus in Map.tsx) so other islands — e.g. the top-centre
+// "copy my position" button — can read it without their own watch.
+export const playerLocation = atom<{
+    latitude: number;
+    longitude: number;
+    accuracy: number;
+} | null>(null);

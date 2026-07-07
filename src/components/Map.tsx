@@ -25,6 +25,7 @@ import {
     mapGeoJSON,
     permanentOverlay,
     planningModeEnabled,
+    playerLocation,
     polyGeoJSON,
     questionFinishedMapData,
     questions,
@@ -324,6 +325,11 @@ const SpoonsLocationStatus = () => {
                     accuracy: position.coords.accuracy,
                     timestamp: position.timestamp,
                 });
+                playerLocation.set({
+                    latitude: position.coords.latitude,
+                    longitude: position.coords.longitude,
+                    accuracy: position.coords.accuracy,
+                });
                 setLocationError(null);
             },
             (error) => {
@@ -336,7 +342,10 @@ const SpoonsLocationStatus = () => {
             },
         );
 
-        return () => navigator.geolocation.clearWatch(watchId);
+        return () => {
+            navigator.geolocation.clearWatch(watchId);
+            playerLocation.set(null);
+        };
     }, [gpsRetryCount]);
 
     useEffect(() => {
@@ -728,6 +737,7 @@ export const Map = ({ className }: { className?: string }) => {
             <MapContainer
                 center={[54.9744, -1.5518]}
                 zoom={10}
+                attributionControl={false}
                 className={cn("w-[500px] h-[500px]", className)}
                 ref={leafletMapContext.set}
                 // @ts-expect-error Typing doesn't update from react-contextmenu

@@ -298,7 +298,7 @@ export const HiderSidebar = () => {
     return (
         <div
             className={cn(
-                "fixed inset-y-0 left-0 z-[1036] flex w-[19rem] max-w-[85vw] flex-col overflow-y-auto bg-[hsl(var(--sidebar-background))] text-white shadow-xl transition-transform duration-200 ease-linear",
+                "fixed inset-y-0 left-0 z-[1036] flex w-full flex-col overflow-y-auto bg-[hsl(var(--sidebar-background))] text-white shadow-xl transition-transform duration-200 ease-linear md:w-[19rem] md:max-w-[85vw]",
                 open ? "translate-x-0" : "-translate-x-full",
             )}
             aria-hidden={!open}

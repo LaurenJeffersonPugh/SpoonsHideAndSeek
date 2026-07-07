@@ -23,6 +23,11 @@ div.leaflet-control-attribution.leaflet-control {
     z-index: 751;
 }
 
+/* Hide the leaflet-draw toolbar (polygon / edit / delete buttons). */
+.leaflet-draw {
+    display: none;
+}
+
 @layer base {
     html {
         @apply text-slate-50;
@@ -102,17 +107,19 @@ div.leaflet-control-attribution.leaflet-control {
         .leaflet-control-container
         .leaflet-top.leaflet-left
         .leaflet-control {
-        @apply !mt-[104px] md:!mt-[40px];
+        /* Cleared past the two vertically-stacked left triggers
+           (questions + hider). */
+        @apply !mt-[76px];
     }
 
     main:not(.fullscreen)
         .leaflet-top
         .leaflet-control:not(.leaflet-control-easyPrint) {
-        @apply !mt-[104px] md:!mt-[40px];
+        @apply !mt-[40px];
     }
 
     div.leaflet-top div.leaflet-control-easyPrint {
-        @apply !mt-[140px] md:!mt-[74px];
+        @apply !mt-[74px];
     }
 
     main.fullscreen div.leaflet-control-easyPrint {
