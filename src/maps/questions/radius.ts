@@ -20,8 +20,11 @@ export const adjustPerRadius = async (
     return modifyMapData(mapData, circle, question.within);
 };
 
-export const hiderifyRadius = (question: RadiusQuestion) => {
-    const $hiderMode = hiderMode.get();
+export const hiderifyRadius = (
+    question: RadiusQuestion,
+    hider?: { latitude: number; longitude: number },
+) => {
+    const $hiderMode = hider ?? hiderMode.get();
     if ($hiderMode === false) {
         return question;
     }

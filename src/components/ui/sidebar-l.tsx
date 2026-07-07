@@ -3,7 +3,7 @@ import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import { atom } from "nanostores";
 import * as React from "react";
-import { TbMessage2Question } from "react-icons/tb";
+import { TbEyeOff, TbMessage2Question } from "react-icons/tb";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,6 +49,16 @@ export const SidebarContext = atom<SidebarContextType>({
     isMobile: false,
     toggleSidebar: () => {},
 });
+
+// Open state for the hider sidebar, which shares the left edge with this
+// (questions) sidebar. Only one of the two is ever open at a time.
+export const hiderSidebarOpen = atom(false);
+
+const closeQuestionsSidebar = () => {
+    const ctx = SidebarContext.get();
+    ctx.setOpen(false);
+    ctx.setOpenMobile(false);
+};
 
 const SidebarProvider = React.forwardRef<
     HTMLDivElement,
@@ -302,6 +312,7 @@ const SidebarTrigger = React.forwardRef<
             )}
             onClick={(event) => {
                 onClick?.(event);
+                if (hiderSidebarOpen.get()) hiderSidebarOpen.set(false);
                 toggleSidebar();
             }}
             {...props}
@@ -311,6 +322,35 @@ const SidebarTrigger = React.forwardRef<
     );
 });
 SidebarTrigger.displayName = "SidebarTrigger";
+
+const HiderSidebarTrigger = React.forwardRef<
+    HTMLButtonElement,
+    React.ComponentProps<"button">
+>(({ className, onClick, ...props }, ref) => {
+    return (
+        <button
+            ref={ref}
+            data-sidebar="hider-trigger"
+            aria-label="Toggle hider tools"
+            title="Hider tools"
+            className={cn(
+                "bg-white hover:bg-[#f4f4f4] text-black rounded-sm border-2 border-black border-opacity-30 cursor-pointer py-1 px-2",
+                "flex items-center gap-1",
+                className,
+            )}
+            onClick={(event) => {
+                onClick?.(event);
+                const next = !hiderSidebarOpen.get();
+                hiderSidebarOpen.set(next);
+                if (next) closeQuestionsSidebar();
+            }}
+            {...props}
+        >
+            <TbEyeOff />
+        </button>
+    );
+});
+HiderSidebarTrigger.displayName = "HiderSidebarTrigger";
 
 const SidebarRail = React.forwardRef<
     HTMLButtonElement,
@@ -773,6 +813,7 @@ const SidebarMenuSubButton = React.forwardRef<
 SidebarMenuSubButton.displayName = "SidebarMenuSubButton";
 
 export {
+    HiderSidebarTrigger,
     Sidebar,
     SidebarContent,
     SidebarFooter,

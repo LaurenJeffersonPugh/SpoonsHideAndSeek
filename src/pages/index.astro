@@ -2,6 +2,7 @@
 import Layout from "@/layouts/Layout.astro";
 import { Map } from "@/components/Map";
 import {
+    HiderSidebarTrigger,
     SidebarProvider as SidebarProviderL,
     SidebarTrigger as SidebarTriggerL,
 } from "@/components/ui/sidebar-l";
@@ -10,6 +11,7 @@ import {
     SidebarTrigger as SidebarTriggerR,
 } from "@/components/ui/sidebar-r";
 import { QuestionSidebar } from "@/components/QuestionSidebar";
+import { HiderSidebar } from "@/components/HiderSidebar";
 import { ZoneSidebar } from "@/components/ZoneSidebar";
 import { OptionDrawers } from "@/components/OptionDrawers";
 import { TutorialDialog } from "@/components/TutorialDialog";
@@ -19,6 +21,7 @@ import { TutorialDialog } from "@/components/TutorialDialog";
     <SidebarProviderL client:load>
         <SidebarProviderR client:load defaultOpen={false}>
             <QuestionSidebar client:only />
+            <HiderSidebar client:only />
             <main class="flex flex-col flex-grow group">
                 <div
                     class="flex justify-center"
@@ -26,10 +29,11 @@ import { TutorialDialog } from "@/components/TutorialDialog";
                 >
                     <div class="w-full h-full relative">
                         <div
-                            class="absolute top-[72px] md:top-2 left-2 z-[1040] group-[.fullscreen]:hidden"
+                            class="absolute top-[72px] md:top-2 left-2 z-[1040] flex flex-row gap-2 group-[.fullscreen]:hidden"
                             data-tutorial-id="left-sidebar-trigger"
                         >
                             <SidebarTriggerL client:load />
+                            <HiderSidebarTrigger client:load />
                         </div>
                         <div
                             class="absolute top-[72px] md:top-2 right-2 z-[1040] group-[.fullscreen]:hidden"

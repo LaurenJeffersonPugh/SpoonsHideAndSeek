@@ -89,8 +89,11 @@ export const adjustPerTentacle = async (
     );
 };
 
-export const hiderifyTentacles = async (question: TentacleQuestion) => {
-    const $hiderMode = hiderMode.get();
+export const hiderifyTentacles = async (
+    question: TentacleQuestion,
+    hiderOverride?: { latitude: number; longitude: number },
+) => {
+    const $hiderMode = hiderOverride ?? hiderMode.get();
     if ($hiderMode === false) {
         return question;
     }
