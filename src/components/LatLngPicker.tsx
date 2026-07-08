@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useDebounce } from "@/hooks/useDebounce";
 import { allowGooglePlusCodes, isLoading } from "@/lib/context";
+import { formatCoordinates, parseCoordinates } from "@/lib/coordinates";
 import { cn } from "@/lib/utils";
 import { determineName, geocode, ICON_COLORS } from "@/maps/api";
 
@@ -36,59 +37,6 @@ import {
 } from "./ui/dialog";
 import { Separator } from "./ui/separator";
 import { SidebarMenuItem } from "./ui/sidebar-l";
-
-const parseCoordinatesFromText = (
-    text: string,
-): { lat: number | null; lng: number | null } => {
-    // Format: decimal degrees (e.g., 37.7749, -122.4194 or 37,7749, -122,4194)
-    const decimalPattern = /(-?\d+[.,]\d+)\s*,\s*(-?\d+[.,]\d+)/;
-
-    // Format: degrees, minutes, seconds (e.g., 37°46'26"N, 122°25'10"W)
-    const dmsPattern =
-        /(\d+)°\s*(\d+)['′]?\s*(?:(\d+(?:\.\d+)?)["″]?\s*)?([NS])[,\s]+(\d+)°\s*(\d+)['′]?\s*(?:(\d+(?:\.\d+)?)["″]?\s*)?([EW])/i;
-
-    // Format: decimal degrees with cardinal directions (e.g., 48,89607° N, 9,09885° E or 48.89607° N, 9.09885° E)
-    const decimalCardinalPattern =
-        /(\d+[.,]\d+)°\s*([NS])\s*,\s*(\d+[.,]\d+)°\s*([EW])/i;
-
-    const decimalMatch = text.match(decimalPattern);
-    if (decimalMatch) {
-        return {
-            lat: parseFloat(decimalMatch[1].replace(",", ".")),
-            lng: parseFloat(decimalMatch[2].replace(",", ".")),
-        };
-    }
-
-    const dmsMatch = text.match(dmsPattern);
-    if (dmsMatch) {
-        let lat =
-            parseInt(dmsMatch[1]) +
-            parseInt(dmsMatch[2]) / 60 +
-            (parseFloat(dmsMatch[3]) || 0) / 3600;
-        let lng =
-            parseInt(dmsMatch[5]) +
-            parseInt(dmsMatch[6]) / 60 +
-            (parseFloat(dmsMatch[7]) || 0) / 3600;
-
-        if (dmsMatch[4].toUpperCase() === "S") lat = -lat;
-        if (dmsMatch[8].toUpperCase() === "W") lng = -lng;
-
-        return { lat, lng };
-    }
-
-    const decimalCardinalMatch = text.match(decimalCardinalPattern);
-    if (decimalCardinalMatch) {
-        let lat = parseFloat(decimalCardinalMatch[1].replace(",", "."));
-        let lng = parseFloat(decimalCardinalMatch[3].replace(",", "."));
-
-        if (decimalCardinalMatch[2].toUpperCase() === "S") lat = -lat;
-        if (decimalCardinalMatch[4].toUpperCase() === "W") lng = -lng;
-
-        return { lat, lng };
-    }
-
-    return { lat: null, lng: null };
-};
 
 const LatLngEditForm = ({
     latitude,
@@ -486,7 +434,7 @@ export const LatitudeLongitude = ({
                                         .readText()
                                         .then((text) => {
                                             const coords =
-                                                parseCoordinatesFromText(text);
+                                                parseCoordinates(text);
                                             if (
                                                 coords.lat !== null &&
                                                 coords.lng !== null
@@ -530,9 +478,7 @@ export const LatitudeLongitude = ({
 
                                 toast.promise(
                                     navigator.clipboard.writeText(
-                                        `${Math.abs(latitude)}°${latitude > 0 ? "N" : "S"}, ${Math.abs(
-                                            longitude,
-                                        )}°${longitude > 0 ? "E" : "W"}`,
+                                        formatCoordinates(latitude, longitude),
                                     ),
                                     {
                                         pending: "Writing to clipboard...",

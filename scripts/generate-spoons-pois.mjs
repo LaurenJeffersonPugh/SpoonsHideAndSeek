@@ -23,6 +23,21 @@ const POI_SELECTORS = [
     { location: "park", key: "leisure", value: "park" },
 ];
 
+// Real POIs that aren't (yet) mapped in OpenStreetMap, so the Overpass query
+// can't find them. Added by hand here so they survive reruns. Keyed by the
+// POI_SELECTORS location; coordinates are [lon, lat]. If one of these later
+// gets added to OSM, remove it here to avoid a duplicate.
+const MANUAL_POIS = {
+    theme_park: [
+        // Greggs on Villette Road, Sunderland — a real store missing from OSM.
+        // 62 Villette Rd, Hendon, SR2 8RW (plus code 9C6WVJVG+VR).
+        {
+            name: "Greggs, Villette Road",
+            coordinates: [-1.37294, 54.89469],
+        },
+    ],
+};
+
 // Greggs are all named "Greggs", so add a location suffix to keep them
 // distinguishable (the tentacle question identifies locations by name).
 const buildName = (location, tags) => {
@@ -210,6 +225,13 @@ for (const feature of buckets.theme_park) {
         ? `Greggs, ${suffix}`
         : `Greggs (${lat.toFixed(4)}, ${lon.toFixed(4)})`;
     await sleep(1200);
+}
+
+// Merge in the hand-maintained POIs that OSM doesn't have.
+for (const [location, entries] of Object.entries(MANUAL_POIS)) {
+    for (const { name, coordinates } of entries) {
+        buckets[location]?.push(turf.point(coordinates, { name }));
+    }
 }
 
 dedupeNames(buckets.theme_park);

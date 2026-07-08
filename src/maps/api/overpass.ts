@@ -120,6 +120,14 @@ export const findTentacleLocations = async (
     question: EncompassingTentacleQuestionSchema,
     text: string = "Determining tentacle locations...",
 ) => {
+    // Guard against an invalid/empty radius (e.g. while the distance field is
+    // mid-edit and momentarily blank). turf.convertLength throws on a
+    // non-positive number, which would reject this promise and crash the
+    // question sidebar; return no locations until a real value is entered.
+    if (!Number.isFinite(question.radius) || question.radius <= 0) {
+        return turf.points([]);
+    }
+
     try {
         // Prefer the pre-generated local dataset: keep the named POIs within the
         // question's radius of its point (no Overpass call).

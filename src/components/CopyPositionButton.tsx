@@ -1,9 +1,10 @@
 import { useStore } from "@nanostores/react";
-import { Check, Copy, MapPin } from "lucide-react";
+import { Check, Files, MapPin } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { useHideSidebarTriggers } from "@/hooks/use-hide-sidebar-triggers";
 import { playerLocation } from "@/lib/context";
+import { formatCoordinates } from "@/lib/coordinates";
 import { cn } from "@/lib/utils";
 
 const copyText = async (text: string) => {
@@ -44,7 +45,7 @@ export const CopyPositionButton = () => {
 
     const onClick = async () => {
         if (!location) return;
-        const text = `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`;
+        const text = formatCoordinates(location.latitude, location.longitude);
         if (await copyText(text)) setCopied(true);
     };
 
@@ -66,7 +67,7 @@ export const CopyPositionButton = () => {
             {copied ? (
                 <Check className="h-4 w-4 text-emerald-600" />
             ) : location ? (
-                <Copy className="h-4 w-4" />
+                <Files className="h-4 w-4" />
             ) : (
                 <MapPin className="h-4 w-4" />
             )}

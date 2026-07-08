@@ -1,10 +1,11 @@
 import { useStore } from "@nanostores/react";
 import * as turf from "@turf/turf";
-import { SidebarCloseIcon } from "lucide-react";
+import { ClipboardPaste, SidebarCloseIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { hiderSidebarOpen } from "@/components/ui/sidebar-l";
 import { leafletMapContext } from "@/lib/context";
+import { parseCoordinates } from "@/lib/coordinates";
 import { cn } from "@/lib/utils";
 import { loadPregeneratedPois } from "@/maps/api";
 import { hiderifyMatching } from "@/maps/questions/matching";
@@ -109,6 +110,33 @@ export const HiderSidebar = () => {
         name: string;
         distanceMiles: number;
     } | null>(null);
+    const [pasteMsg, setPasteMsg] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (!pasteMsg) return;
+        const id = setTimeout(() => setPasteMsg(null), 2000);
+        return () => clearTimeout(id);
+    }, [pasteMsg]);
+
+    // Read the clipboard and fill the seeker's coordinate fields from a pasted
+    // "lat, lng" string. For thermometer this fills the start point.
+    const pasteSeekerCoords = async () => {
+        let text: string;
+        try {
+            text = await navigator.clipboard.readText();
+        } catch {
+            setPasteMsg("Clipboard unavailable");
+            return;
+        }
+        const { lat, lng } = parseCoordinates(text);
+        if (lat === null || lng === null) {
+            setPasteMsg("No coordinates on clipboard");
+            return;
+        }
+        setLat(String(lat));
+        setLng(String(lng));
+        setPasteMsg("Pasted");
+    };
 
     const num = (value: string) => {
         const n = parseFloat(value);
@@ -410,11 +438,22 @@ export const HiderSidebar = () => {
             {/* Question form */}
             {type && (
                 <div className="mx-4 mb-6 mt-4 flex flex-col gap-3 rounded-md border border-white/15 p-3">
-                    <p className={labelClass}>
-                        {type === "thermometer"
-                            ? "Enter the seeker's start and end points."
-                            : "Enter the seeker's coordinates."}
-                    </p>
+                    <div className="flex items-center justify-between gap-2">
+                        <p className={labelClass}>
+                            {type === "thermometer"
+                                ? "Enter the seeker's start and end points."
+                                : "Enter the seeker's coordinates."}
+                        </p>
+                        <button
+                            type="button"
+                            className="flex shrink-0 items-center gap-1 rounded bg-blue-600 px-2 py-1 text-xs font-semibold hover:bg-blue-500"
+                            onClick={pasteSeekerCoords}
+                            title="Paste 'lat, lng' from the clipboard"
+                        >
+                            <ClipboardPaste className="h-3.5 w-3.5" />
+                            {pasteMsg ?? "Paste"}
+                        </button>
+                    </div>
                     <div className="grid grid-cols-2 gap-2">
                         <label className="flex flex-col gap-1">
                             <span className={labelClass}>

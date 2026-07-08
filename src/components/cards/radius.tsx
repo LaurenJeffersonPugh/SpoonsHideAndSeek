@@ -64,7 +64,7 @@ export const RadiusQuestionComponent = ({
                     <Input
                         type="number"
                         className="rounded-md p-2 w-16"
-                        value={data.radius}
+                        value={Number.isFinite(data.radius) ? data.radius : ""}
                         disabled={!data.drag || $isLoading}
                         onChange={(e) =>
                             questionModified(

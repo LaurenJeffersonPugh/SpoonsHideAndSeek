@@ -32,6 +32,7 @@ import {
     thunderforestApiKey,
     triggerLocalRefresh,
 } from "@/lib/context";
+import { formatCoordinates } from "@/lib/coordinates";
 import { cn } from "@/lib/utils";
 import { applyQuestionsToMapGeoData, holedMask } from "@/maps";
 import { hiderifyQuestion } from "@/maps";
@@ -845,9 +846,7 @@ export const Map = ({ className }: { className?: string }) => {
 
                             toast.promise(
                                 navigator.clipboard.writeText(
-                                    `${Math.abs(latitude)}°${latitude > 0 ? "N" : "S"}, ${Math.abs(
-                                        longitude,
-                                    )}°${longitude > 0 ? "E" : "W"}`,
+                                    formatCoordinates(latitude, longitude),
                                 ),
                                 {
                                     pending: "Writing to clipboard...",

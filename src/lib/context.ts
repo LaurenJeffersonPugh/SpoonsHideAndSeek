@@ -19,23 +19,29 @@ import {
     type Units,
 } from "@/maps/schema";
 
+// Spoons: the game region is fixed to Tyne & Wear, so default here rather than
+// the upstream Japan. Used as the fallback region for POI / Overpass queries
+// (relation 154376 = the Tyne and Wear ceremonial county). The storage key is
+// bumped ("-spoons") so browsers with the old cached Japan value re-initialise.
+// coordinates are [lat, lng] and extent is [north, west, south, east] to match
+// the transform geocode.ts applies to Photon results.
 export const mapGeoLocation = persistentAtom<OpenStreetMap>(
-    "mapGeoLocation",
+    "mapGeoLocation-spoons",
     {
         geometry: {
-            coordinates: [36.5748441, 139.2394179],
+            coordinates: [54.9391774, -1.5948712],
             type: "Point",
         },
         type: "Feature",
         properties: {
             osm_type: "R",
-            osm_id: 382313,
-            extent: [45.7112046, 122.7141754, 20.2145811, 154.205541],
-            country: "Japan",
-            osm_key: "place",
-            countrycode: "JP",
-            osm_value: "country",
-            name: "Japan",
+            osm_id: 154376,
+            extent: [55.0793823, -1.8527169, 54.7990424, -1.345665],
+            country: "United Kingdom",
+            osm_key: "boundary",
+            countrycode: "GB",
+            osm_value: "ceremonial",
+            name: "Tyne and Wear",
             type: "country",
         },
     },

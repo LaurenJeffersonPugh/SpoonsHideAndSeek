@@ -74,7 +74,7 @@ export const TentacleQuestionComponent = ({
                     <Input
                         type="number"
                         className="rounded-md p-2 w-16"
-                        value={data.radius}
+                        value={Number.isFinite(data.radius) ? data.radius : ""}
                         onChange={(e) =>
                             questionModified(
                                 (data.radius = parseFloat(e.target.value)),

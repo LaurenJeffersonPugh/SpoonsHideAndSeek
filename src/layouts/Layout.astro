@@ -22,7 +22,16 @@ const ogImage = new URL(
 <html lang="en">
     <head>
         <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width" />
+        <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
+        />
+        <!-- Empty icon: keeps the tab blank (no branding yet) while stopping the
+        browser's default /favicon.ico request, which otherwise trips Astro's
+        base check. Replace with base-aware icon links once a Spoons icon
+        exists, e.g. <link rel="icon" href={`${import.meta.env.BASE_URL}...`} />. -->
+        <link rel="icon" href="data:," />
+
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -56,5 +65,19 @@ const ogImage = new URL(
     <body class:list={[className, "dark"]}>
         <slot />
         <ToastContainer client:only />
+        <script is:inline>
+            // Block browser page pinch/zoom (iOS Safari ignores
+            // user-scalable=no). Leaflet's own map zoom uses touch events, not
+            // these iOS "gesture" events, so the map still zooms while the rest
+            // of the UI cannot — this prevents the soft-lock where zooming the
+            // page over a sidebar left no way to zoom back out.
+            ["gesturestart", "gesturechange", "gestureend"].forEach((type) =>
+                document.addEventListener(
+                    type,
+                    (event) => event.preventDefault(),
+                    { passive: false },
+                ),
+            );
+        </script>
     </body>
 </html>
