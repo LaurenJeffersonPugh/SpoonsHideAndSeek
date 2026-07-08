@@ -1,8 +1,8 @@
 import { useStore } from "@nanostores/react";
 import {
-    ClipboardCopyIcon,
     ClipboardPasteIcon,
     EditIcon,
+    FilesIcon,
     LocateIcon,
 } from "lucide-react";
 import { OpenLocationCode } from "open-location-code";
@@ -490,7 +490,7 @@ export const LatitudeLongitude = ({
                             }}
                             title="Copy coordinates to clipboard"
                         >
-                            <ClipboardCopyIcon />
+                            <FilesIcon />
                         </Button>
                     </div>
                 </div>
