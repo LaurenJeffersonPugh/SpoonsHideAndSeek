@@ -17,7 +17,18 @@ export default defineConfig({
                 short_name: "Spoons",
                 description:
                     "A Jet Lag-style hide and seek map for Tyne and Wear. Shows the game boundary, valid public-transport stops, and every area within 500 m of a stop where you can legally hide.",
-                icons: [],
+                icons: [
+                    {
+                        src: "/SpoonsHideAndSeek/android-chrome-192x192.png",
+                        sizes: "192x192",
+                        type: "image/png",
+                    },
+                    {
+                        src: "/SpoonsHideAndSeek/android-chrome-512x512.png",
+                        sizes: "512x512",
+                        type: "image/png",
+                    },
+                ],
                 theme_color: "#1F2F3F",
             },
         }),
