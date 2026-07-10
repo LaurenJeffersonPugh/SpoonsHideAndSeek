@@ -4,6 +4,8 @@ import tailwind from "@astrojs/tailwind";
 import AstroPWA from "@vite-pwa/astro";
 import { defineConfig } from "astro/config";
 
+const appBase = process.env.CAPACITOR ? "/" : "/SpoonsHideAndSeek/";
+
 // https://astro.build/config
 export default defineConfig({
     integrations: [
@@ -18,6 +20,9 @@ export default defineConfig({
                 short_name: "Spoons",
                 description:
                     "A Jet Lag-style hide and seek map for Tyne and Wear. Shows the game boundary, valid public-transport stops, and every area within 500 m of a stop where you can legally hide.",
+                display: "standalone",
+                start_url: appBase,
+                scope: appBase,
                 icons: [
                     {
                         src: "/SpoonsHideAndSeek/android-chrome-192x192.png",
