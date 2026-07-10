@@ -53,5 +53,8 @@ export default defineConfig({
         },
     },
     site: "https://laurenjeffersonpugh.github.io",
-    base: "SpoonsHideAndSeek",
+    // Capacitor serves the bundled files from the app root, so build with no
+    // base path for the native app (CAPACITOR=1). GitHub Pages keeps the
+    // /SpoonsHideAndSeek/ project-page base.
+    base: process.env.CAPACITOR ? "/" : "SpoonsHideAndSeek",
 });

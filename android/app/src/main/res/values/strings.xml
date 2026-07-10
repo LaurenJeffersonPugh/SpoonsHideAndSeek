@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Spoons Hide and Seek</string>
+    <string name="title_activity_main">Spoons Hide and Seek</string>
+    <string name="package_name">com.spoons.hideandseek</string>
+    <string name="custom_url_scheme">com.spoons.hideandseek</string>
+</resources>

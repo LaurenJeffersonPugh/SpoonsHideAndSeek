@@ -11,12 +11,17 @@
         "test": "vitest",
         "generate:spoons-zones": "node scripts/generate-spoons-hiding-zones.mjs",
         "generate:spoons-pois": "node scripts/generate-spoons-pois.mjs",
-        "generate:admin-districts": "node scripts/generate-admin-districts.mjs"
+        "generate:admin-districts": "node scripts/generate-admin-districts.mjs",
+        "cap:sync": "cross-env CAPACITOR=1 astro build && cap sync android",
+        "cap:open": "cap open android",
+        "cap:apk": "cross-env CAPACITOR=1 astro build && cap sync android && cap open android"
     },
     "dependencies": {
         "@arcgis/core": "^4.32.10",
         "@astrojs/react": "4.2.0",
         "@astrojs/tailwind": "^5.1.5",
+        "@capacitor/android": "^8.4.1",
+        "@capacitor/core": "^8.4.1",
         "@nanostores/persistent": "^0.10.2",
         "@nanostores/react": "^0.8.4",
         "@radix-ui/react-alert-dialog": "^1.1.11",
@@ -64,6 +69,8 @@
         "zod": "^3.25.28"
     },
     "devDependencies": {
+        "@capacitor/assets": "^3.0.5",
+        "@capacitor/cli": "^8.4.1",
         "@eslint/js": "^9.25.1",
         "@types/d3-geo": "^3.1.0",
         "@types/geojson": "^7946.0.16",
@@ -75,6 +82,7 @@
         "@types/react": "19.1.6",
         "@types/react-dom": "19.0.3",
         "@types/terraformer__arcgis": "^2.0.5",
+        "cross-env": "^10.1.0",
         "eslint": "^9.19.0",
         "eslint-config-prettier": "^10.0.1",
         "eslint-plugin-import-alias": "^1.2.0",

@@ -78,82 +78,52 @@ fullscreen Chrome pointed at your site). No local Android toolchain needed.
 
 ---
 
-## Route C — Self-contained APK with Capacitor (works offline)
+## Route C — Self-contained APK with Capacitor (works offline) — SET UP
 
 [Capacitor](https://capacitorjs.com) wraps the **built web files** in a native
-Android shell, so everything is baked into the APK and runs with no internet.
-More setup, but the result is a proper standalone app.
+Android shell, so everything is baked into the APK and runs with no internet,
+and there's **no browser toolbar**. This is already wired up in the repo.
 
-**Requirements:** Node, **JDK 17+**, and **Android Studio** (for the SDK and to
-build/sign the APK).
+**Already done (committed):**
 
-### 1. Build without the GitHub Pages base path
+- Capacitor installed + `capacitor.config.ts` (`appId: com.spoons.hideandseek`,
+  `webDir: dist`).
+- The `android/` native project is scaffolded.
+- The GitHub Pages base path is made conditional in
+  [`astro.config.mjs`](../astro.config.mjs) — `base: process.env.CAPACITOR ? "/" : "SpoonsHideAndSeek"` — so the Capacitor build serves assets/`public/data` from
+  the app root instead of `/SpoonsHideAndSeek/`. (Everything uses
+  `import.meta.env.BASE_URL`, so nothing else needed changing.)
+- Location permissions (`ACCESS_FINE_LOCATION` / `ACCESS_COARSE_LOCATION`) added
+  to `android/app/src/main/AndroidManifest.xml`. The WebView is a secure
+  context, so `navigator.geolocation` works and Android prompts at runtime.
+- Launcher icon generated from the boot image (`public/JLIcon.png` →
+  `assets/icon-only.png`). The adaptive-icon XMLs were removed so the full boot
+  shows uncropped on all Android versions.
+- npm scripts: `cap:sync`, `cap:open`, `cap:apk`.
 
-This is the key project-specific step. The site is built with
-`base: "SpoonsHideAndSeek"`, so every asset/data URL becomes
-`/SpoonsHideAndSeek/…`. Capacitor serves files from the app root
-(`https://localhost/`), where that path **doesn't exist** — the map and all
-`public/data` files would 404.
+**You need:** **JDK 17+** and **Android Studio** (only for the final
+build/sign — that step can't be scripted).
 
-Make the base conditional in [`astro.config.mjs`](../astro.config.mjs):
-
-```js
-base: process.env.CAPACITOR ? "/" : "SpoonsHideAndSeek",
-```
-
-Then build for Capacitor with that env set:
-
-```bash
-CAPACITOR=1 pnpm build      # Windows PowerShell:  $env:CAPACITOR=1; pnpm build
-```
-
-Astro outputs to `dist/`. Everything already uses `import.meta.env.BASE_URL`
-(the `spoonsDataUrl` helper etc.), so switching the base is all that's needed —
-no per-file URL edits.
-
-### 2. Add Capacitor
+### Build the APK
 
 ```bash
-pnpm add -D @capacitor/cli
-pnpm add @capacitor/core @capacitor/android
-npx cap init "Spoons Hide and Seek" com.spoons.hideandseek --web-dir=dist
-npx cap add android
-npx cap sync
+pnpm cap:apk        # builds with CAPACITOR=1, syncs into android/, opens Android Studio
 ```
 
-### 3. Grant location permission
+(or `pnpm cap:sync` then `pnpm cap:open` separately.) In Android Studio:
+**Build → Build Bundle(s) / APK(s) → Build APK(s)**. The APK lands in
+`android/app/build/outputs/apk/`. For a shareable **signed release** APK use
+**Build → Generate Signed Bundle / APK**, create a keystore, and **keep that
+keystore** (needed for future updates). Sideload the APK as in Route B.
 
-The app uses GPS. Add to `android/app/src/main/AndroidManifest.xml`:
+Whenever the web app changes, re-run `pnpm cap:sync` before rebuilding.
 
-```xml
-<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-```
+### Changing the icon later
 
-The browser `navigator.geolocation` API works in the Capacitor WebView (it's a
-secure context), so no code change is required; Android will prompt for
-permission at runtime. (Optionally add `@capacitor/geolocation` for a nicer
-permission flow.)
-
-### 4. Build the APK
-
-```bash
-npx cap open android          # opens Android Studio
-```
-
-In Android Studio: **Build → Build Bundle(s) / APK(s) → Build APK(s)**. The
-generated `app-debug.apk` (or a signed release APK) is under
-`android/app/build/outputs/apk/`. Sideload it as in Route B.
-
-Repeat `CAPACITOR=1 pnpm build && npx cap sync` whenever the web app changes.
-
-### App icon & splash (optional)
-
-```bash
-pnpm add -D @capacitor/assets
-# put a 1024x1024 icon at resources/icon.png, then:
-npx @capacitor/assets generate --android
-```
+Replace `assets/icon-only.png` (≥1024×1024) and run
+`npx capacitor-assets generate --android`. If your new icon is centered with
+padding, you can keep Capacitor's adaptive icons; the boot's edge-to-edge
+artwork is why the adaptive XMLs were removed here.
 
 ---
 
