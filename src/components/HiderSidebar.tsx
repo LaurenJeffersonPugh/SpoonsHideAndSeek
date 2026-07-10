@@ -7,7 +7,7 @@ import { hiderSidebarOpen } from "@/components/ui/sidebar-l";
 import { leafletMapContext } from "@/lib/context";
 import { parseCoordinates } from "@/lib/coordinates";
 import { cn } from "@/lib/utils";
-import { loadPregeneratedPois } from "@/maps/api";
+import { loadAdminBoundaries, loadPregeneratedPois } from "@/maps/api";
 import { hiderifyMatching } from "@/maps/questions/matching";
 import { hiderifyMeasuring } from "@/maps/questions/measuring";
 import { hiderifyRadius } from "@/maps/questions/radius";
@@ -106,10 +106,16 @@ export const HiderSidebar = () => {
         "miles",
     );
     const [category, setCategory] = useState(CATEGORY_OPTIONS[0].value);
+    // Matching can either compare nearest-place ("category") or which
+    // administration district you're both in ("council" / "ward").
+    const [matchMode, setMatchMode] = useState<"category" | "council" | "ward">(
+        "category",
+    );
     const [nearest, setNearest] = useState<{
         name: string;
         distanceMiles: number;
     } | null>(null);
+    const [adminLocation, setAdminLocation] = useState<string | null>(null);
     const [pasteMsg, setPasteMsg] = useState<string | null>(null);
 
     useEffect(() => {
@@ -152,7 +158,9 @@ export const HiderSidebar = () => {
     // independent of the seeker's point — this is "what am I nearest to".
     useEffect(() => {
         const isCategory =
-            type === "tentacles" || type === "measuring" || type === "matching";
+            type === "tentacles" ||
+            type === "measuring" ||
+            (type === "matching" && matchMode === "category");
         if (!isCategory || !hiderLoc) {
             setNearest(null);
             return;
@@ -197,7 +205,42 @@ export const HiderSidebar = () => {
         return () => {
             cancelled = true;
         };
-    }, [type, category, hiderLoc]);
+    }, [type, category, hiderLoc, matchMode]);
+
+    useEffect(() => {
+        if (type !== "matching" || matchMode === "category" || !hiderLoc) {
+            setAdminLocation(null);
+            return;
+        }
+
+        let cancelled = false;
+
+        void (async () => {
+            try {
+                const level = matchMode === "council" ? 8 : 10;
+                const boundaries = await loadAdminBoundaries(level);
+                const hiderPoint = turf.point([
+                    hiderLoc.longitude,
+                    hiderLoc.latitude,
+                ]);
+                const containing = boundaries.find((boundary) =>
+                    turf.booleanPointInPolygon(hiderPoint, boundary),
+                );
+
+                if (!cancelled) {
+                    setAdminLocation(
+                        (containing?.properties?.name as string) ?? null,
+                    );
+                }
+            } catch {
+                if (!cancelled) setAdminLocation(null);
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [type, hiderLoc, matchMode]);
 
     const computeAnswer = async () => {
         if (!hiderLoc || !type) return;
@@ -294,6 +337,34 @@ export const HiderSidebar = () => {
                 result = q.hiderCloser
                     ? `You are CLOSER to a ${categoryLabel(category)} than the seeker.`
                     : `You are FURTHER from a ${categoryLabel(category)} than the seeker.`;
+            } else if (type === "matching" && matchMode !== "category") {
+                // Administration-district match: are the hider and the seeker's
+                // point in the same council (level 8) or ward (level 10)?
+                const level = matchMode === "council" ? 8 : 10;
+                const levelLabel = matchMode === "council" ? "council" : "ward";
+                const districts = await loadAdminBoundaries(level);
+                const districtOf = (lngLat: [number, number]) => {
+                    const point = turf.point(lngLat);
+                    const feature = districts.find((district) =>
+                        turf.booleanPointInPolygon(point, district),
+                    );
+                    return (feature?.properties?.name as string) ?? null;
+                };
+                const hiderDistrict = districtOf([
+                    hiderLoc.longitude,
+                    hiderLoc.latitude,
+                ]);
+                const seekerDistrict = districtOf([num(lng), num(lat)]);
+
+                if (!hiderDistrict) {
+                    result = `You don't appear to be inside any ${levelLabel} — are you within Tyne & Wear?`;
+                } else if (!seekerDistrict) {
+                    result = `You're in ${hiderDistrict} ${levelLabel}. The seeker's point isn't inside any ${levelLabel}.`;
+                } else if (hiderDistrict === seekerDistrict) {
+                    result = `SAME — you're both in ${hiderDistrict} ${levelLabel}.`;
+                } else {
+                    result = `DIFFERENT — you're in ${hiderDistrict}, the seeker is in ${seekerDistrict}.`;
+                }
             } else if (type === "matching") {
                 const q = await hiderifyMatching(
                     {
@@ -319,8 +390,12 @@ export const HiderSidebar = () => {
         }
     };
 
+    // The category (nearest-place) picker: tentacles/measuring always, matching
+    // only when not doing an administration-district match.
     const usesCategory =
-        type === "tentacles" || type === "measuring" || type === "matching";
+        type === "tentacles" ||
+        type === "measuring" ||
+        (type === "matching" && matchMode === "category");
     const usesRadius = type === "radius" || type === "tentacles";
 
     return (
@@ -536,6 +611,29 @@ export const HiderSidebar = () => {
                         </div>
                     )}
 
+                    {type === "matching" && (
+                        <label className="flex flex-col gap-1">
+                            <span className={labelClass}>Match on</span>
+                            <select
+                                className={inputClass}
+                                value={matchMode}
+                                onChange={(e) =>
+                                    setMatchMode(
+                                        e.target.value as typeof matchMode,
+                                    )
+                                }
+                            >
+                                <option value="category">Nearest place</option>
+                                <option value="council">
+                                    Administration district — Council
+                                </option>
+                                <option value="ward">
+                                    Administration district — Ward
+                                </option>
+                            </select>
+                        </label>
+                    )}
+
                     {usesCategory && (
                         <label className="flex flex-col gap-1">
                             <span className={labelClass}>Category</span>
@@ -560,6 +658,15 @@ export const HiderSidebar = () => {
                                 {nearest.name}
                             </span>{" "}
                             ({nearest.distanceMiles.toFixed(1)} mi)
+                        </div>
+                    )}
+
+                    {type === "matching" && matchMode !== "category" && (
+                        <div className="rounded-md border border-white/15 bg-black/20 p-2 text-sm">
+                            Your {matchMode === "council" ? "council" : "ward"}:{" "}
+                            <span className="font-semibold">
+                                {adminLocation ?? "not found"}
+                            </span>
                         </div>
                     )}
 

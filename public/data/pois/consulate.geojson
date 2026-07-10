@@ -1,1 +1,13 @@
-{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"name":"India House"},"geometry":{"type":"Point","coordinates":[-1.5811157,54.9768162]}}]}
+{
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "properties": { "name": "India House" },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [-1.5811157, 54.9768162]
+            }
+        }
+    ]
+}

@@ -1,1 +1,37 @@
-{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"name":"Whitehouse Farm Centre"},"geometry":{"type":"Point","coordinates":[-1.7011356,55.1305257]}},{"type":"Feature","properties":{"name":"Pets' Corner"},"geometry":{"type":"Point","coordinates":[-1.5929655,54.9907359]}},{"type":"Feature","properties":{"name":"Down at the Farm"},"geometry":{"type":"Point","coordinates":[-1.4419774,54.8542252]}},{"type":"Feature","properties":{"name":"Potter's Tropical Village"},"geometry":{"type":"Point","coordinates":[-1.7436323,54.8033856]}}]}
+{
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "properties": { "name": "Whitehouse Farm Centre" },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [-1.7011356, 55.1305257]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": { "name": "Pets' Corner" },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [-1.5929655, 54.9907359]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": { "name": "Down at the Farm" },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [-1.4419774, 54.8542252]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": { "name": "Potter's Tropical Village" },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [-1.7436323, 54.8033856]
+            }
+        }
+    ]
+}
