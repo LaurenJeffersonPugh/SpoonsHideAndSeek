@@ -198,6 +198,9 @@ importers:
       '@types/terraformer__arcgis':
         specifier: ^2.0.5
         version: 2.0.5
+      adm-zip:
+        specifier: ^0.5.18
+        version: 0.5.18
       cross-env:
         specifier: ^10.1.0
         version: 10.1.0
@@ -222,6 +225,12 @@ importers:
       prettier:
         specifier: 3.5.3
         version: 3.5.3
+      proj4:
+        specifier: ^2.20.9
+        version: 2.20.9
+      shapefile:
+        specifier: ^0.6.6
+        version: 0.6.6
       typescript-eslint:
         specifier: ^8.24.0
         version: 8.24.0(eslint@9.19.0(jiti@1.21.7))(typescript@5.7.3)
@@ -3296,6 +3305,10 @@ packages:
   add-stream@1.0.0:
     resolution: {integrity: sha512-qQLMr+8o0WC4FZGQTcJiKBVC59JylcPSrTtk6usvmIDFUOCKegapy1VHQwRbFMOFyb/inzUVqHs+eMYKDM1YeQ==}
 
+  adm-zip@0.5.18:
+    resolution: {integrity: sha512-ufJnssQGbxzLNS1Ho9bCtX4rQKCCvoVuDLHoJyc3F9dOGDB4BkWs2Ci0kv53lqocAEQ/Cbi+I2XCsNYGqVYqng==}
+    engines: {node: '>=12.0'}
+
   ajv@6.12.6:
     resolution: {integrity: sha512-j3fVLgvTo527anyYyJOGTYJbG+vnnQYvE0m5mmkc1TK+nxAppkCLMIL0aZ4dblVCNoGShhm+kzE4ZUykBoMg4g==}
 
@@ -3366,6 +3379,9 @@ packages:
 
   array-iterate@2.0.1:
     resolution: {integrity: sha512-I1jXZMjAgCMmxT4qxXfPXa6SthSoE8h6gkSI9BGGNv8mP8G/v0blc+qFnZu6K42vTOiuME596QaLO0TP3Lk0xg==}
+
+  array-source@0.0.4:
+    resolution: {integrity: sha512-frNdc+zBn80vipY+GdcJkLEbMWj3xmzArYApmUGxoiV8uAu/ygcs9icPdsGdA26h0MkHUMW6EN2piIvVx+M5Mw==}
 
   array.prototype.findlast@1.2.5:
     resolution: {integrity: sha512-CVvd6FHg1Z3POpBLxO6E6zr+rSKEQ9L6rZHAaY7lLfhKsWYUBBOuMs0e9o24oopj6H+geRCX0YJ+TJLBK2eHyQ==}
@@ -4417,6 +4433,9 @@ packages:
   file-saver@1.3.8:
     resolution: {integrity: sha512-spKHSBQIxxS81N/O21WmuXA2F6wppUCsutpzenOeZzOCCJ5gEfcbqJP983IrpLXzYmXnMUa6J03SubcNPdKrlg==}
 
+  file-source@0.6.1:
+    resolution: {integrity: sha512-1R1KneL7eTXmXfKxC10V/9NeGOdbsAXJ+lQ//fvvcHUgtaZcZDWNJNblxAoVOyV1cj45pOtUrR3vZTBwqcW8XA==}
+
   filelist@1.0.4:
     resolution: {integrity: sha512-w1cEuf3S+DrLCQL7ET6kz+gmlJdbq9J7yXCSjK/OZCPA+qEN1WyF4ZAf0YYJa4/shHJra2t/d/r8SV4Ji+x+8Q==}
 
@@ -5260,6 +5279,9 @@ packages:
     resolution: {integrity: sha512-8q7VEgMJW4J8tcfVPy8g09NcQwZdbwFEqhe/WZkoIzjn/3TGDwtOCYtXGxA3O8tPzpczCCDgv+P2P5y00ZJOOg==}
     engines: {node: '>= 8'}
 
+  mgrs@1.0.0:
+    resolution: {integrity: sha512-awNbTOqCxK1DBGjalK3xqWIstBZgN6fxsMSiXLs9/spqWkF2pAhb2rrYCFSsr1/tT7PhcDGjZndG8SWYn0byYA==}
+
   micromark-core-commonmark@2.0.3:
     resolution: {integrity: sha512-RDBrHEMSxVFLg6xvnXmb1Ayr2WzLAWjeSATAoxwKYJV94TeNavgoIdA0a9ytzDSVzBy2YKFK+emCPOEibLeCrg==}
 
@@ -5702,6 +5724,9 @@ packages:
     resolution: {integrity: sha512-3O/iVVsJAPsOnpwWIeD+d6z/7PmqApyQePUtCndjatj/9I5LylHvt5qluFaBT3I5h3r1ejfR056c+FCv+NnNXg==}
     engines: {node: 18 || 20 || >=22}
 
+  path-source@0.1.3:
+    resolution: {integrity: sha512-dWRHm5mIw5kw0cs3QZLNmpUWty48f5+5v9nWD2dw3Y0Hf+s01Ag8iJEWV0Sm0kocE8kK27DrIowha03e1YR+Qw==}
+
   path-type@3.0.0:
     resolution: {integrity: sha512-T2ZUsdZFHgA3u4e5PfPbjd7HDDpxPnQb5jN0SrDsjNSuVXHJqtwTnWqG0B1jZrgmJ/7lj1EmVIByWt1gxGkWvg==}
     engines: {node: '>=4'}
@@ -5843,6 +5868,14 @@ packages:
 
   process-nextick-args@2.0.1:
     resolution: {integrity: sha512-3ouUOpQhtgrbOa17J7+uxOTpITYWaGP7/AhoR3+A+/1e9skrzelGi/dXzEYyvbxubEF6Wn2ypscTKiKJFFn1ag==}
+
+  proj4@2.20.9:
+    resolution: {integrity: sha512-GLBGqXaTcdWnppre3o1sMmy4DcMGSGq/ng+9k2MTNddarRK6SveINqlqYzi3xEXuy06ljY1TTrC6H9C4f360IQ==}
+    peerDependencies:
+      geotiff: '*'
+    peerDependenciesMeta:
+      geotiff:
+        optional: true
 
   prompts@2.4.2:
     resolution: {integrity: sha512-NxNv/kLguCA7p3jE8oL2aEBsrJWgAakBpgmgK6lpPWV+WuOmY6r2/zbAVnP+T8bQlA0nzHXSJSJW0Hq7ylaD2Q==}
@@ -6238,6 +6271,10 @@ packages:
     resolution: {integrity: sha512-RJRdvCo6IAnPdsvP/7m6bsQqNnn1FCBX5ZNtFL98MmFF/4xAIJTIg1YbHW5DC2W5SKZanrC6i4HsJqlajw/dZw==}
     engines: {node: '>= 0.4'}
 
+  shapefile@0.6.6:
+    resolution: {integrity: sha512-rLGSWeK2ufzCVx05wYd+xrWnOOdSV7xNUW5/XFgx3Bc02hBkpMlrd2F1dDII7/jhWzv0MSyBFh5uJIy9hLdfuw==}
+    hasBin: true
+
   sharp@0.32.6:
     resolution: {integrity: sha512-KyLTWwgcR9Oe4d9HwCwNM2l7+J0dUQwn/yf7S0EnTtb0eVS4RxO0eUSvxPtzT4F3SY+C4K6fqdv/DO27sJ/v/w==}
     engines: {node: '>=14.15.0'}
@@ -6304,6 +6341,9 @@ packages:
   slice-ansi@4.0.0:
     resolution: {integrity: sha512-qMCMfhY040cVHT43K9BFygqYbUPFZKHOg7K73mtTWJRb8pyP3fzf4Ixd5SzdEJQ6MRUg/WBnOLxghZtKKurENQ==}
     engines: {node: '>=10'}
+
+  slice-source@0.4.1:
+    resolution: {integrity: sha512-YiuPbxpCj4hD9Qs06hGAz/OZhQ0eDuALN0lRWJez0eD/RevzKqGdUx1IOMUnXgpr+sXZLq3g8ERwbAH0bCb8vg==}
 
   smob@1.5.0:
     resolution: {integrity: sha512-g6T+p7QO8npa+/hNx9ohv1E5pVCmWrVCUzUXJyLdMmftX6ER0oiWY/w9knEonLpnOp6b6FenKnMfR8gqwWdwig==}
@@ -6372,6 +6412,9 @@ packages:
   stream-buffers@2.2.0:
     resolution: {integrity: sha512-uyQK/mx5QjHun80FLJTfaWE7JtwfRMKBLkMne6udYOmvH0CawotVa7TfgYHzAnpphn4+TweIx1QKMnRIbipmUg==}
     engines: {node: '>= 0.10.0'}
+
+  stream-source@0.3.5:
+    resolution: {integrity: sha512-ZuEDP9sgjiAwUVoDModftG0JtYiLUV8K4ljYD1VyUMRWtbVf92474o4kuuul43iZ8t/hRuiDAx1dIJSvirrK/g==}
 
   streamx@2.28.0:
     resolution: {integrity: sha512-1Yowhzjf0ivGMrTIkY9hav5TxobO9qIVqUE41fiCGMGgc3CLlf4MY+9AHmZqBWgDTue0fY9zWjYFVyf6Diuobw==}
@@ -6539,6 +6582,10 @@ packages:
 
   text-decoder@1.2.7:
     resolution: {integrity: sha512-vlLytXkeP4xvEq2otHeJfSQIRyWxo/oZGEbXrtEEF9Hnmrdly59sUbzZ/QgyWuLYHctCHxFF4tRQZNQ9k60ExQ==}
+
+  text-encoding@0.6.4:
+    resolution: {integrity: sha512-hJnc6Qg3dWoOMkqP53F0dzRIgtmsAge09kxUIqGrEUS4qr5rWLckGYaQAVr+opBrIMRErGgy6f5aPnyPpyGRfg==}
+    deprecated: no longer maintained
 
   text-extensions@1.9.0:
     resolution: {integrity: sha512-wiBrwC1EhBelW12Zy26JeOUkQ5mRu+5o8rpsJk5+2t+Y5vE7e842qtZDQ2g1NpX/29HdyFeJ4nSIhI47ENSxlQ==}
@@ -7156,6 +7203,9 @@ packages:
   widest-line@5.0.0:
     resolution: {integrity: sha512-c9bZp7b5YtRj2wOe6dlj32MK+Bx/M/d+9VB2SHM1OtsUHR0aV0tdP6DWh/iMt0kWi1t5g1Iudu6hQRNd1A4PVA==}
     engines: {node: '>=18'}
+
+  wkt-parser@1.5.5:
+    resolution: {integrity: sha512-/zMYi94/7D7fxcOSlVmWn6vnOMj3Gq5d1xvVjaYOS9n6h0qOJ4I7YYVxBWYcH1vq9+suhqzXkn05Yx47zQNUIA==}
 
   word-wrap@1.2.5:
     resolution: {integrity: sha512-BN22B5eaMMI9UMtjrGd5g5eCYPpCPDUy0FJXbYsaT5zYxjFOckS53SQDE3pWkVoWpHXVb3BrYcEN4Twa55B5cA==}
@@ -11395,6 +11445,8 @@ snapshots:
 
   add-stream@1.0.0: {}
 
+  adm-zip@0.5.18: {}
+
   ajv@6.12.6:
     dependencies:
       fast-deep-equal: 3.1.3
@@ -11467,6 +11519,8 @@ snapshots:
       is-string: 1.1.1
 
   array-iterate@2.0.1: {}
+
+  array-source@0.0.4: {}
 
   array.prototype.findlast@1.2.5:
     dependencies:
@@ -12754,6 +12808,10 @@ snapshots:
 
   file-saver@1.3.8: {}
 
+  file-source@0.6.1:
+    dependencies:
+      stream-source: 0.3.5
+
   filelist@1.0.4:
     dependencies:
       minimatch: 5.1.6
@@ -13708,6 +13766,8 @@ snapshots:
 
   merge2@1.4.1: {}
 
+  mgrs@1.0.0: {}
+
   micromark-core-commonmark@2.0.3:
     dependencies:
       decode-named-character-reference: 1.1.0
@@ -14260,6 +14320,11 @@ snapshots:
       lru-cache: 11.5.1
       minipass: 7.1.2
 
+  path-source@0.1.3:
+    dependencies:
+      array-source: 0.0.4
+      file-source: 0.6.1
+
   path-type@3.0.0:
     dependencies:
       pify: 3.0.0
@@ -14380,6 +14445,11 @@ snapshots:
   prismjs@1.30.0: {}
 
   process-nextick-args@2.0.1: {}
+
+  proj4@2.20.9:
+    dependencies:
+      mgrs: 1.0.0
+      wkt-parser: 1.5.5
 
   prompts@2.4.2:
     dependencies:
@@ -14887,6 +14957,15 @@ snapshots:
       es-errors: 1.3.0
       es-object-atoms: 1.1.1
 
+  shapefile@0.6.6:
+    dependencies:
+      array-source: 0.0.4
+      commander: 2.20.3
+      path-source: 0.1.3
+      slice-source: 0.4.1
+      stream-source: 0.3.5
+      text-encoding: 0.6.4
+
   sharp@0.32.6:
     dependencies:
       color: 4.2.3
@@ -15008,6 +15087,8 @@ snapshots:
       astral-regex: 2.0.0
       is-fullwidth-code-point: 3.0.0
 
+  slice-source@0.4.1: {}
+
   smob@1.5.0: {}
 
   smol-toml@1.3.4: {}
@@ -15062,6 +15143,8 @@ snapshots:
   std-env@3.9.0: {}
 
   stream-buffers@2.2.0: {}
+
+  stream-source@0.3.5: {}
 
   streamx@2.28.0:
     dependencies:
@@ -15328,6 +15411,8 @@ snapshots:
       b4a: 1.8.1
     transitivePeerDependencies:
       - react-native-b4a
+
+  text-encoding@0.6.4: {}
 
   text-extensions@1.9.0: {}
 
@@ -15881,6 +15966,8 @@ snapshots:
   widest-line@5.0.0:
     dependencies:
       string-width: 7.2.0
+
+  wkt-parser@1.5.5: {}
 
   word-wrap@1.2.5: {}
 
