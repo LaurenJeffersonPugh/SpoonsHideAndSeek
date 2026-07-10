@@ -78,52 +78,116 @@ fullscreen Chrome pointed at your site). No local Android toolchain needed.
 
 ---
 
-## Route C — Self-contained APK with Capacitor (works offline) — SET UP
+## Route C — Self-contained APK with Capacitor (works offline) — **this is the one set up**
 
-[Capacitor](https://capacitorjs.com) wraps the **built web files** in a native
-Android shell, so everything is baked into the APK and runs with no internet,
-and there's **no browser toolbar**. This is already wired up in the repo.
+[Capacitor](https://capacitorjs.com) wraps the built web files in a native
+Android shell: everything is baked into the APK, it runs with **no internet**,
+and there's **no browser toolbar**. The project is already wired up (Capacitor
+installed, `android/` project scaffolded, base path handled, GPS permission
+added, boot launcher icon generated, `cap:*` npm scripts added). You just need
+to build it. Follow the steps below in order.
 
-**Already done (committed):**
+### Step 1 — Install Android Studio (one time)
 
-- Capacitor installed + `capacitor.config.ts` (`appId: com.spoons.hideandseek`,
-  `webDir: dist`).
-- The `android/` native project is scaffolded.
-- The GitHub Pages base path is made conditional in
-  [`astro.config.mjs`](../astro.config.mjs) — `base: process.env.CAPACITOR ? "/" : "SpoonsHideAndSeek"` — so the Capacitor build serves assets/`public/data` from
-  the app root instead of `/SpoonsHideAndSeek/`. (Everything uses
-  `import.meta.env.BASE_URL`, so nothing else needed changing.)
-- Location permissions (`ACCESS_FINE_LOCATION` / `ACCESS_COARSE_LOCATION`) added
-  to `android/app/src/main/AndroidManifest.xml`. The WebView is a secure
-  context, so `navigator.geolocation` works and Android prompts at runtime.
-- Launcher icon generated from the boot image (`public/JLIcon.png` →
-  `assets/icon-only.png`). The adaptive-icon XMLs were removed so the full boot
-  shows uncropped on all Android versions.
-- npm scripts: `cap:sync`, `cap:open`, `cap:apk`.
+1. Download it from <https://developer.android.com/studio> and run the
+   installer.
+2. On first launch, pick the **Standard** setup — it downloads the Android SDK,
+   platform-tools, and a bundled Java (JDK). **You don't need to install Java
+   separately** as long as you build inside Android Studio.
+3. Let the setup wizard finish downloading (needs internet, a few minutes).
 
-**You need:** **JDK 17+** and **Android Studio** (only for the final
-build/sign — that step can't be scripted).
+(You already have Node + pnpm from working on the web app.)
 
-### Build the APK
+### Step 2 — Build the web app and open it in Android Studio
+
+From the repo root:
 
 ```bash
-pnpm cap:apk        # builds with CAPACITOR=1, syncs into android/, opens Android Studio
+pnpm install      # only if you haven't already
+pnpm cap:apk
 ```
 
-(or `pnpm cap:sync` then `pnpm cap:open` separately.) In Android Studio:
-**Build → Build Bundle(s) / APK(s) → Build APK(s)**. The APK lands in
-`android/app/build/outputs/apk/`. For a shareable **signed release** APK use
-**Build → Generate Signed Bundle / APK**, create a keystore, and **keep that
-keystore** (needed for future updates). Sideload the APK as in Route B.
+`pnpm cap:apk` does three things: builds the site for native (root paths),
+copies it into the `android/` project, and opens Android Studio.
 
-Whenever the web app changes, re-run `pnpm cap:sync` before rebuilding.
+> If Android Studio doesn't open automatically, open it manually → **Open** →
+> select the **`android`** folder inside the repo.
 
-### Changing the icon later
+### Step 3 — Let Android Studio finish setting up
+
+The first time you open the project, Android Studio runs a **Gradle sync**
+(bottom status bar). This can take a few minutes and needs internet.
+
+- If it shows a banner like _"Install missing SDK package(s)"_ or asks to accept
+  licenses, click the link/**Accept** and let it install.
+- Wait until the status bar says sync finished with no errors before
+  continuing.
+
+### Step 4 — Build the APK
+
+1. Menu bar → **Build** → **Build App Bundle(s) / APK(s)** → **Build APK(s)**.
+2. When it finishes, a small notification appears in the bottom-right:
+   _"APK(s) generated successfully"_ with a **locate** link. Click **locate**.
+3. That opens the folder containing **`app-debug.apk`** (path:
+   `android/app/build/outputs/apk/debug/app-debug.apk`).
+
+This "debug" APK is fully installable and fine for sharing with friends. (For a
+"proper" signed release build, see [Optional](#optional--signed-release-apk)
+below.)
+
+### Step 5 — Put it on a phone
+
+1. Get `app-debug.apk` onto the phone — email it to yourself, upload to Google
+   Drive, or copy it over a USB cable.
+2. On the phone, tap the file (in the Files app or your browser's downloads).
+3. Android will say installs from this source are blocked → tap **Settings** →
+   enable **Allow from this source** → go back → **Install**.
+4. Open the app. It'll ask for **location permission** the first time — allow
+   it so the map can find you.
+
+Done — it launches fullscreen, no toolbar, and works without internet.
+
+### Updating the app after you change the web code
+
+Re-run the build and rebuild the APK:
+
+```bash
+pnpm cap:sync     # rebuild web + copy into android/
+```
+
+Then in Android Studio, **Build → Build APK(s)** again (Step 4).
+
+### Optional — signed release APK
+
+The debug APK is signed with a throwaway debug key. For a cleaner build you can
+control (and update over time):
+
+1. **Build** → **Generate Signed App Bundle / APK…** → choose **APK** → Next.
+2. Click **Create new…** to make a **keystore** (a `.jks` file). Fill in a
+   password, key alias, and another password; save the file somewhere safe.
+3. Pick **release**, Finish. Output:
+   `android/app/build/outputs/apk/release/app-release.apk`.
+
+> **Keep the keystore and passwords.** You need the same keystore to ship
+> updates; lose it and users must uninstall/reinstall to update.
+
+### Changing the app icon later
 
 Replace `assets/icon-only.png` (≥1024×1024) and run
-`npx capacitor-assets generate --android`. If your new icon is centered with
-padding, you can keep Capacitor's adaptive icons; the boot's edge-to-edge
-artwork is why the adaptive XMLs were removed here.
+`npx capacitor-assets generate --android`, then rebuild. (The boot icon's
+artwork reaches the edges, which is why the Android adaptive-icon XMLs were
+removed — so the full image shows instead of being cropped to a circle.)
+
+### If something goes wrong
+
+- **`pnpm cap:apk` can't find Android Studio** → open Android Studio yourself
+  and **Open** the `android` folder; then do Steps 3–4.
+- **Gradle sync fails / "SDK location not found"** → in Android Studio open
+  **Settings → Languages & Frameworks → Android SDK**, make sure an SDK is
+  installed, then **File → Sync Project with Gradle Files**.
+- **Map is blank / data missing in the app** → you built without the native
+  base. Always build via `pnpm cap:sync` / `pnpm cap:apk` (they set
+  `CAPACITOR=1`), not a plain `pnpm build`.
 
 ---
 

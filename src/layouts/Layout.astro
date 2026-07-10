@@ -61,6 +61,13 @@ const ogImage = new URL(
         <meta property="og:image:alt" content="Spoons Hide and Seek" />
 
         {pwaInfo && <Fragment set:html={pwaInfo.webManifest.linkTag} />}
+        <script>
+            // Register the service worker so the app installs and works offline.
+            // (Auto-updates on the next visit — see registerType in
+            // astro.config.mjs.)
+            import { registerSW } from "virtual:pwa-register";
+            registerSW({ immediate: true });
+        </script>
     </head>
     <body class:list={[className, "dark"]}>
         <slot />

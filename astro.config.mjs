@@ -12,6 +12,7 @@ export default defineConfig({
             applyBaseStyles: false,
         }),
         AstroPWA({
+            registerType: "autoUpdate",
             manifest: {
                 name: "Spoons Hide and Seek",
                 short_name: "Spoons",
@@ -30,6 +31,64 @@ export default defineConfig({
                     },
                 ],
                 theme_color: "#1F2F3F",
+            },
+            workbox: {
+                // Precache the app shell AND the local game data (*.geojson) so
+                // the whole game works offline. Exclude the raw Google Maps
+                // exports (not used at runtime). Bump the size cap so large
+                // bundled chunks (e.g. arcgis) are cached too.
+                globPatterns: [
+                    "**/*.{js,css,html,ico,png,svg,woff,woff2,geojson}",
+                ],
+                globIgnores: ["**/google-map-export*"],
+                maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+                // The document is precached under this exact key (Astro base,
+                // no trailing slash), so offline navigations fall back to it.
+                navigateFallback: "/SpoonsHideAndSeek",
+                runtimeCaching: [
+                    {
+                        // Base-map tiles are cached as you view them, so areas
+                        // you've panned over stay available offline. (Tiles you
+                        // never loaded can't be shown offline.)
+                        urlPattern: ({ url }) =>
+                            [
+                                "basemaps.cartocdn.com",
+                                "tile.openstreetmap.org",
+                                "tile.thunderforest.com",
+                            ].some((host) => url.hostname.endsWith(host)),
+                        handler: "CacheFirst",
+                        options: {
+                            cacheName: "map-tiles",
+                            expiration: {
+                                maxEntries: 3000,
+                                maxAgeSeconds: 60 * 60 * 24 * 30,
+                            },
+                            cacheableResponse: { statuses: [0, 200] },
+                        },
+                    },
+                    {
+                        urlPattern: ({ url }) =>
+                            url.hostname === "fonts.googleapis.com",
+                        handler: "StaleWhileRevalidate",
+                        options: {
+                            cacheName: "google-fonts-stylesheets",
+                            cacheableResponse: { statuses: [0, 200] },
+                        },
+                    },
+                    {
+                        urlPattern: ({ url }) =>
+                            url.hostname === "fonts.gstatic.com",
+                        handler: "CacheFirst",
+                        options: {
+                            cacheName: "google-fonts-webfonts",
+                            expiration: {
+                                maxEntries: 30,
+                                maxAgeSeconds: 60 * 60 * 24 * 365,
+                            },
+                            cacheableResponse: { statuses: [0, 200] },
+                        },
+                    },
+                ],
             },
         }),
     ],
