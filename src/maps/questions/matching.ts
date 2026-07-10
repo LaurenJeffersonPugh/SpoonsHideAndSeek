@@ -1,11 +1,5 @@
 import * as turf from "@turf/turf";
-import type {
-    Feature,
-    FeatureCollection,
-    MultiPolygon,
-    Point,
-    Polygon,
-} from "geojson";
+import type { FeatureCollection, Point } from "geojson";
 import _ from "lodash";
 import osmtogeojson from "osmtogeojson";
 import { toast } from "react-toastify";
@@ -17,8 +11,8 @@ import {
     polyGeoJSON,
 } from "@/lib/context";
 import {
-    findAdminBoundary,
     findPlacesInZone,
+    loadAdminBoundaries,
     loadPregeneratedPois,
     LOCATION_FIRST_TAG,
     nearestToQuestion,
@@ -152,71 +146,56 @@ export const determineMatchingBoundary = _.memoize(
                 break;
             }
             case "zone": {
-                boundary = await findAdminBoundary(
-                    question.lat,
-                    question.lng,
+                // Local Tyne & Wear boundaries (council = 8, district = 10).
+                const districts = await loadAdminBoundaries(
                     question.cat.adminLevel,
+                );
+                const point = turf.point([question.lng, question.lat]);
+                boundary = districts.find((district) =>
+                    turf.booleanPointInPolygon(point, district),
                 );
 
                 if (!boundary) {
-                    toast.error("No boundary found for this zone");
+                    toast.error(
+                        "That point isn't inside any administration district.",
+                    );
                     throw new Error("No boundary found");
                 }
                 break;
             }
             case "letter-zone": {
-                const zone = await findAdminBoundary(
-                    question.lat,
-                    question.lng,
+                const districts = await loadAdminBoundaries(
                     question.cat.adminLevel,
                 );
+                const point = turf.point([question.lng, question.lat]);
+                const containing = districts.find((district) =>
+                    turf.booleanPointInPolygon(point, district),
+                );
 
-                if (!zone) {
-                    toast.error("No boundary found for this zone");
+                if (!containing) {
+                    toast.error(
+                        "That point isn't inside any administration district.",
+                    );
                     throw new Error("No boundary found");
                 }
 
-                let englishName = zone.properties?.["name:en"];
-
-                if (!englishName) {
-                    const name = zone.properties?.name;
-
-                    if (/^[a-zA-Z]$/.test(name[0])) {
-                        englishName = name;
-                    } else {
-                        toast.error("No English name found for this zone");
-                        throw new Error("No English name");
-                    }
+                const name = containing.properties?.name;
+                if (!name || !/^[a-zA-Z]/.test(name)) {
+                    toast.error("That district has no usable name.");
+                    throw new Error("No usable name");
                 }
 
-                const letter = englishName[0].toUpperCase();
+                const letter = name[0].toUpperCase();
 
-                boundary = turf.featureCollection(
-                    osmtogeojson(
-                        await findPlacesInZone(
-                            `[admin_level=${question.cat.adminLevel}]["name:en"~"^${letter}.+"]`, // Regex is faster than filtering afterward
-                            `Finding zones that start with the same letter (${letter})...`,
-                            "relation",
-                            "geom",
-                            [
-                                `[admin_level=${question.cat.adminLevel}]["name"~"^${letter}.+"]`,
-                            ], // Regex is faster than filtering afterward
-                        ),
-                    ).features.filter(
-                        (x): x is Feature<Polygon | MultiPolygon> =>
-                            x.geometry &&
-                            (x.geometry.type === "Polygon" ||
-                                x.geometry.type === "MultiPolygon"),
-                    ),
-                );
-
-                // It's either simplify or crash. Technically this could be bad if someone's hiding zone was inside multiple zones, but that's unlikely.
+                // Union every district that starts with the same letter.
                 boundary = safeUnion(
-                    turf.simplify(boundary, {
-                        tolerance: 0.001,
-                        highQuality: true,
-                        mutate: true,
-                    }),
+                    turf.featureCollection(
+                        districts.filter(
+                            (district) =>
+                                (district.properties?.name ??
+                                    "")[0]?.toUpperCase() === letter,
+                        ),
+                    ),
                 );
 
                 break;

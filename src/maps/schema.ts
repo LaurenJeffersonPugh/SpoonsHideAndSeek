@@ -251,26 +251,18 @@ const ordinaryMatchingQuestionSchema = baseMatchingQuestionSchema.extend({
 
 const zoneMatchingQuestionsSchema = baseMatchingQuestionSchema.extend({
     type: z.union([
-        z.literal("zone").describe("Zone Question"),
+        z.literal("zone").describe("Same Administration District"),
         z
             .literal("letter-zone")
-            .describe("Zone Starts With Same Letter Question"),
+            .describe("Administration District Starts With Same Letter"),
     ]),
+    // adminLevel maps to the two local Tyne & Wear boundary sets:
+    //   8  -> council (metropolitan borough), 10 -> district (electoral ward).
     cat: z
         .object({
-            adminLevel: z.union([
-                z.literal(2),
-                z.literal(3),
-                z.literal(4),
-                z.literal(5),
-                z.literal(6),
-                z.literal(7),
-                z.literal(8),
-                z.literal(9),
-                z.literal(10),
-            ]),
+            adminLevel: z.union([z.literal(8), z.literal(10)]),
         })
-        .default(() => ({ adminLevel: 3 }) as { adminLevel: 3 }),
+        .default(() => ({ adminLevel: 8 }) as { adminLevel: 8 }),
 });
 
 const homeGameMatchingQuestionsSchema = baseMatchingQuestionSchema.extend({

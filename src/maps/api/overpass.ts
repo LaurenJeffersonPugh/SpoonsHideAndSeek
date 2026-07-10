@@ -1,5 +1,11 @@
 import * as turf from "@turf/turf";
-import type { Feature, FeatureCollection, MultiPolygon, Point } from "geojson";
+import type {
+    Feature,
+    FeatureCollection,
+    MultiPolygon,
+    Point,
+    Polygon,
+} from "geojson";
 import _ from "lodash";
 import osmtogeojson from "osmtogeojson";
 import { toast } from "react-toastify";
@@ -88,6 +94,32 @@ export const loadPregeneratedPois = async (
         );
     }
     const geo = (await response.json()) as FeatureCollection<Point>;
+    return geo.features;
+};
+
+const adminBoundaryUrl = (adminLevel: 8 | 10) =>
+    `${import.meta.env.BASE_URL.replace(/\/?$/, "/")}data/${
+        adminLevel === 8 ? "admin-councils" : "admin-districts"
+    }.geojson`;
+
+/**
+ * Loads the pre-generated local administration-district boundaries (see
+ * scripts/generate-admin-districts.mjs) used by the "same administration
+ * district?" matching question. adminLevel 8 = councils (the 5 Tyne & Wear
+ * boroughs), 10 = districts (electoral wards). Runs offline; no Overpass.
+ */
+export const loadAdminBoundaries = async (
+    adminLevel: 8 | 10,
+): Promise<Feature<Polygon | MultiPolygon>[]> => {
+    const response = await fetch(adminBoundaryUrl(adminLevel));
+    if (!response.ok) {
+        throw new Error(
+            `Failed to load admin boundaries for level ${adminLevel}: ${response.status} ${response.statusText}`,
+        );
+    }
+    const geo = (await response.json()) as FeatureCollection<
+        Polygon | MultiPolygon
+    >;
     return geo.features;
 };
 

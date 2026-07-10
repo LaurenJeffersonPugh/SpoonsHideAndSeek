@@ -815,7 +815,7 @@ export const Map = ({ className }: { className?: string }) => {
                         },
                     },
                     {
-                        text: "Exclude Country",
+                        text: "Exclude Council",
                         callback: (e: any) => {
                             addQuestion({
                                 id: "matching",
@@ -824,7 +824,7 @@ export const Map = ({ className }: { className?: string }) => {
                                     lng: e.latlng.lng,
                                     same: false,
                                     cat: {
-                                        adminLevel: 2,
+                                        adminLevel: 8,
                                     },
                                     type: "zone",
                                 },
