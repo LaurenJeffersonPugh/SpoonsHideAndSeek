@@ -2,6 +2,13 @@ import "leaflet/dist/leaflet.css";
 import "leaflet-contextmenu/dist/leaflet.contextmenu.css";
 import "leaflet-contextmenu";
 
+import { Capacitor } from "@capacitor/core";
+import {
+    Geolocation as CapacitorGeolocation,
+    type CallbackID,
+    type Position as CapacitorPosition,
+    type PositionOptions as CapacitorPositionOptions,
+} from "@capacitor/geolocation";
 import { useStore } from "@nanostores/react";
 import * as turf from "@turf/turf";
 import type { Feature, FeatureCollection, Point } from "geojson";
@@ -183,6 +190,80 @@ const fallbackLocationOptions: PositionOptions = {
 const isRetryableLocationError = (error: GeolocationPositionError) =>
     error.code === error.POSITION_UNAVAILABLE || error.code === error.TIMEOUT;
 
+type SpoonsPosition = GeolocationPosition | CapacitorPosition;
+
+const nativeHighAccuracyLocationOptions: CapacitorPositionOptions = {
+    ...highAccuracyLocationOptions,
+    enableLocationFallback: true,
+    interval: 10000,
+    minimumUpdateInterval: 5000,
+};
+
+const nativeFallbackLocationOptions: CapacitorPositionOptions = {
+    ...fallbackLocationOptions,
+    enableLocationFallback: true,
+};
+
+const isNativeApp = () => Capacitor.isNativePlatform();
+
+const getUnknownLocationErrorMessage = (error: unknown) => {
+    if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        "message" in error &&
+        typeof error.code === "number"
+    ) {
+        return getLocationErrorMessage(error as GeolocationPositionError);
+    }
+
+    if (error instanceof Error) return error.message;
+
+    if (
+        typeof error === "object" &&
+        error !== null &&
+        "message" in error &&
+        typeof error.message === "string"
+    ) {
+        return error.message;
+    }
+
+    return "Unable to access your location.";
+};
+
+const ensureNativeLocationPermission = async () => {
+    let permissions = await CapacitorGeolocation.checkPermissions();
+
+    if (
+        permissions.location === "granted" ||
+        permissions.coarseLocation === "granted"
+    ) {
+        return;
+    }
+
+    permissions = await CapacitorGeolocation.requestPermissions({
+        permissions: ["location", "coarseLocation"],
+    });
+
+    if (
+        permissions.location !== "granted" &&
+        permissions.coarseLocation !== "granted"
+    ) {
+        throw new Error(
+            "Location permission is blocked. Allow location access for this app.",
+        );
+    }
+};
+
+const clearLocationWatch = (watchId: number | CallbackID) => {
+    if (typeof watchId === "number") {
+        navigator.geolocation.clearWatch(watchId);
+        return;
+    }
+
+    void CapacitorGeolocation.clearWatch({ id: watchId });
+};
+
 const createStopPopup = (name: string, stopType: SpoonsStopType) => {
     const container = document.createElement("div");
     const title = document.createElement("strong");
@@ -329,19 +410,26 @@ const SpoonsLocationStatus = () => {
     const [collapsed, setCollapsed] = useState(false);
 
     useEffect(() => {
-        if (!window.isSecureContext) {
+        const nativeApp = isNativeApp();
+        let cancelled = false;
+        let webWatchId: number | null = null;
+        let nativeWatchId: CallbackID | null = null;
+
+        if (!nativeApp && !window.isSecureContext) {
             setLocationError(
                 "Location access needs HTTPS, localhost, or the installed app.",
             );
             return;
         }
 
-        if (!navigator.geolocation) {
+        if (!nativeApp && !navigator.geolocation) {
             setLocationError("Geolocation is not supported by this browser.");
             return;
         }
 
-        const updateLocation = (position: GeolocationPosition) => {
+        const updateLocation = (position: SpoonsPosition) => {
+            if (cancelled) return;
+
             hasLocationRef.current = true;
             setLocation({
                 latitude: position.coords.latitude,
@@ -357,37 +445,81 @@ const SpoonsLocationStatus = () => {
             setLocationError(null);
         };
 
-        const watchId = navigator.geolocation.watchPosition(
-            updateLocation,
-            (error) => {
-                setLocationError(getLocationErrorMessage(error));
+        if (nativeApp) {
+            void (async () => {
+                try {
+                    await ensureNativeLocationPermission();
+                    if (cancelled) return;
 
-                if (!isRetryableLocationError(error)) return;
+                    nativeWatchId = await CapacitorGeolocation.watchPosition(
+                        nativeHighAccuracyLocationOptions,
+                        (position, error) => {
+                            if (position) {
+                                updateLocation(position);
+                            }
 
-                navigator.geolocation.getCurrentPosition(
-                    updateLocation,
-                    (fallbackError) => {
-                        setLocationError(
-                            getLocationErrorMessage(fallbackError),
+                            if (error) {
+                                setLocationError(
+                                    getUnknownLocationErrorMessage(error),
+                                );
+                            }
+                        },
+                    );
+
+                    const firstPosition =
+                        await CapacitorGeolocation.getCurrentPosition(
+                            nativeFallbackLocationOptions,
                         );
-                    },
-                    fallbackLocationOptions,
-                );
-            },
-            highAccuracyLocationOptions,
-        );
 
-        navigator.geolocation.getCurrentPosition(
-            updateLocation,
-            (error) => {
-                if (hasLocationRef.current) return;
-                setLocationError(getLocationErrorMessage(error));
-            },
-            fallbackLocationOptions,
-        );
+                    updateLocation(firstPosition);
+                } catch (error) {
+                    if (cancelled || hasLocationRef.current) return;
+
+                    setLocationError(getUnknownLocationErrorMessage(error));
+                }
+            })();
+        } else {
+            webWatchId = navigator.geolocation.watchPosition(
+                updateLocation,
+                (error) => {
+                    setLocationError(getLocationErrorMessage(error));
+
+                    if (!isRetryableLocationError(error)) return;
+
+                    navigator.geolocation.getCurrentPosition(
+                        updateLocation,
+                        (fallbackError) => {
+                            setLocationError(
+                                getLocationErrorMessage(fallbackError),
+                            );
+                        },
+                        fallbackLocationOptions,
+                    );
+                },
+                highAccuracyLocationOptions,
+            );
+
+            navigator.geolocation.getCurrentPosition(
+                updateLocation,
+                (error) => {
+                    if (hasLocationRef.current) return;
+                    setLocationError(getLocationErrorMessage(error));
+                },
+                fallbackLocationOptions,
+            );
+        }
 
         return () => {
-            navigator.geolocation.clearWatch(watchId);
+            cancelled = true;
+
+            if (webWatchId !== null) {
+                navigator.geolocation.clearWatch(webWatchId);
+            }
+
+            if (nativeWatchId !== null) {
+                void CapacitorGeolocation.clearWatch({ id: nativeWatchId });
+            }
+
             hasLocationRef.current = false;
             playerLocation.set(null);
         };
@@ -669,7 +801,7 @@ export const Map = ({ className }: { className?: string }) => {
         [],
     );
     const geoWatchIdRef = useMemo(
-        () => ({ current: null as number | null }),
+        () => ({ current: null as number | CallbackID | null }),
         [],
     );
 
@@ -990,19 +1122,27 @@ export const Map = ({ className }: { className?: string }) => {
                 followMeMarkerRef.current = null;
             }
             if (geoWatchIdRef.current !== null) {
-                navigator.geolocation.clearWatch(geoWatchIdRef.current);
+                clearLocationWatch(geoWatchIdRef.current);
                 geoWatchIdRef.current = null;
             }
             return;
         }
 
-        if (!window.isSecureContext || !navigator.geolocation) {
+        const nativeApp = isNativeApp();
+        let cancelled = false;
+
+        if (
+            (!nativeApp && !window.isSecureContext) ||
+            (!nativeApp && !navigator.geolocation)
+        ) {
             toast.error("Location access is not available in this browser.");
             followMe.set(false);
             return;
         }
 
-        const updateFollowMeLocation = (pos: GeolocationPosition) => {
+        const updateFollowMeLocation = (pos: SpoonsPosition) => {
+            if (cancelled) return;
+
             const lat = pos.coords.latitude;
             const lng = pos.coords.longitude;
             if (followMeMarkerRef.current) {
@@ -1020,33 +1160,74 @@ export const Map = ({ className }: { className?: string }) => {
             }
         };
 
-        geoWatchIdRef.current = navigator.geolocation.watchPosition(
-            updateFollowMeLocation,
-            (error) => {
-                if (isRetryableLocationError(error)) {
-                    navigator.geolocation.getCurrentPosition(
-                        updateFollowMeLocation,
-                        () => {
-                            toast.error("Unable to access your location.");
-                            followMe.set(false);
-                        },
-                        fallbackLocationOptions,
-                    );
-                    return;
-                }
+        if (nativeApp) {
+            void (async () => {
+                try {
+                    await ensureNativeLocationPermission();
+                    if (cancelled) return;
 
-                toast.error(getLocationErrorMessage(error));
-                followMe.set(false);
-            },
-            highAccuracyLocationOptions,
-        );
+                    geoWatchIdRef.current =
+                        await CapacitorGeolocation.watchPosition(
+                            nativeHighAccuracyLocationOptions,
+                            (position, error) => {
+                                if (position) {
+                                    updateFollowMeLocation(position);
+                                }
+
+                                if (error) {
+                                    toast.error(
+                                        getUnknownLocationErrorMessage(error),
+                                    );
+                                    followMe.set(false);
+                                }
+                            },
+                        );
+
+                    const firstPosition =
+                        await CapacitorGeolocation.getCurrentPosition(
+                            nativeFallbackLocationOptions,
+                        );
+
+                    updateFollowMeLocation(firstPosition);
+                } catch (error) {
+                    if (cancelled) return;
+
+                    toast.error(getUnknownLocationErrorMessage(error));
+                    followMe.set(false);
+                }
+            })();
+        } else {
+            geoWatchIdRef.current = navigator.geolocation.watchPosition(
+                updateFollowMeLocation,
+                (error) => {
+                    if (isRetryableLocationError(error)) {
+                        navigator.geolocation.getCurrentPosition(
+                            updateFollowMeLocation,
+                            () => {
+                                toast.error("Unable to access your location.");
+                                followMe.set(false);
+                            },
+                            fallbackLocationOptions,
+                        );
+                        return;
+                    }
+
+                    toast.error(getLocationErrorMessage(error));
+                    followMe.set(false);
+                },
+                highAccuracyLocationOptions,
+            );
+        }
+
         return () => {
+            cancelled = true;
+
             if (followMeMarkerRef.current) {
                 map.removeLayer(followMeMarkerRef.current);
                 followMeMarkerRef.current = null;
             }
             if (geoWatchIdRef.current !== null) {
-                navigator.geolocation.clearWatch(geoWatchIdRef.current);
+                clearLocationWatch(geoWatchIdRef.current);
                 geoWatchIdRef.current = null;
             }
         };
