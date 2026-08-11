@@ -160,13 +160,28 @@ const getLocationErrorMessage = (error: GeolocationPositionError) => {
         case error.PERMISSION_DENIED:
             return "Location permission is blocked. Allow location access for this site.";
         case error.POSITION_UNAVAILABLE:
-            return "Your current location is unavailable. Check location services.";
+            return "Your current location is unavailable. Check location services and make sure precise location is enabled.";
         case error.TIMEOUT:
-            return "Still waiting for a GPS fix. Try moving near a window or tap Retry GPS.";
+            return "Still waiting for a location fix. Try moving near a window or tap Retry GPS.";
         default:
             return error.message;
     }
 };
+
+const highAccuracyLocationOptions: PositionOptions = {
+    enableHighAccuracy: true,
+    maximumAge: 10000,
+    timeout: 60000,
+};
+
+const fallbackLocationOptions: PositionOptions = {
+    enableHighAccuracy: false,
+    maximumAge: 60000,
+    timeout: 15000,
+};
+
+const isRetryableLocationError = (error: GeolocationPositionError) =>
+    error.code === error.POSITION_UNAVAILABLE || error.code === error.TIMEOUT;
 
 const createStopPopup = (name: string, stopType: SpoonsStopType) => {
     const container = document.createElement("div");
@@ -313,34 +328,51 @@ const SpoonsLocationStatus = () => {
     const [collapsed, setCollapsed] = useState(false);
 
     useEffect(() => {
+        if (!window.isSecureContext) {
+            setLocationError(
+                "Location access needs HTTPS, localhost, or the installed app.",
+            );
+            return;
+        }
+
         if (!navigator.geolocation) {
             setLocationError("Geolocation is not supported by this browser.");
             return;
         }
 
+        const updateLocation = (position: GeolocationPosition) => {
+            setLocation({
+                latitude: position.coords.latitude,
+                longitude: position.coords.longitude,
+                accuracy: position.coords.accuracy,
+                timestamp: position.timestamp,
+            });
+            playerLocation.set({
+                latitude: position.coords.latitude,
+                longitude: position.coords.longitude,
+                accuracy: position.coords.accuracy,
+            });
+            setLocationError(null);
+        };
+
         const watchId = navigator.geolocation.watchPosition(
-            (position) => {
-                setLocation({
-                    latitude: position.coords.latitude,
-                    longitude: position.coords.longitude,
-                    accuracy: position.coords.accuracy,
-                    timestamp: position.timestamp,
-                });
-                playerLocation.set({
-                    latitude: position.coords.latitude,
-                    longitude: position.coords.longitude,
-                    accuracy: position.coords.accuracy,
-                });
-                setLocationError(null);
-            },
+            updateLocation,
             (error) => {
                 setLocationError(getLocationErrorMessage(error));
+
+                if (!isRetryableLocationError(error)) return;
+
+                navigator.geolocation.getCurrentPosition(
+                    updateLocation,
+                    (fallbackError) => {
+                        setLocationError(
+                            getLocationErrorMessage(fallbackError),
+                        );
+                    },
+                    fallbackLocationOptions,
+                );
             },
-            {
-                enableHighAccuracy: true,
-                maximumAge: 10000,
-                timeout: 60000,
-            },
+            highAccuracyLocationOptions,
         );
 
         return () => {
@@ -952,29 +984,49 @@ export const Map = ({ className }: { className?: string }) => {
             return;
         }
 
+        if (!window.isSecureContext || !navigator.geolocation) {
+            toast.error("Location access is not available in this browser.");
+            followMe.set(false);
+            return;
+        }
+
+        const updateFollowMeLocation = (pos: GeolocationPosition) => {
+            const lat = pos.coords.latitude;
+            const lng = pos.coords.longitude;
+            if (followMeMarkerRef.current) {
+                followMeMarkerRef.current.setLatLng([lat, lng]);
+            } else {
+                const marker = L.marker([lat, lng], {
+                    icon: L.divIcon({
+                        html: `<div class="text-blue-700 bg-white rounded-full border-2 border-blue-700 shadow w-5 h-5 flex items-center justify-center"><svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="#2A81CB" opacity="0.5"/><circle cx="8" cy="8" r="3" fill="#2A81CB"/></svg></div>`,
+                        className: "",
+                    }),
+                    zIndexOffset: 1000,
+                });
+                marker.addTo(map);
+                followMeMarkerRef.current = marker;
+            }
+        };
+
         geoWatchIdRef.current = navigator.geolocation.watchPosition(
-            (pos) => {
-                const lat = pos.coords.latitude;
-                const lng = pos.coords.longitude;
-                if (followMeMarkerRef.current) {
-                    followMeMarkerRef.current.setLatLng([lat, lng]);
-                } else {
-                    const marker = L.marker([lat, lng], {
-                        icon: L.divIcon({
-                            html: `<div class="text-blue-700 bg-white rounded-full border-2 border-blue-700 shadow w-5 h-5 flex items-center justify-center"><svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="#2A81CB" opacity="0.5"/><circle cx="8" cy="8" r="3" fill="#2A81CB"/></svg></div>`,
-                            className: "",
-                        }),
-                        zIndexOffset: 1000,
-                    });
-                    marker.addTo(map);
-                    followMeMarkerRef.current = marker;
+            updateFollowMeLocation,
+            (error) => {
+                if (isRetryableLocationError(error)) {
+                    navigator.geolocation.getCurrentPosition(
+                        updateFollowMeLocation,
+                        () => {
+                            toast.error("Unable to access your location.");
+                            followMe.set(false);
+                        },
+                        fallbackLocationOptions,
+                    );
+                    return;
                 }
-            },
-            () => {
-                toast.error("Unable to access your location.");
+
+                toast.error(getLocationErrorMessage(error));
                 followMe.set(false);
             },
-            { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 },
+            highAccuracyLocationOptions,
         );
         return () => {
             if (followMeMarkerRef.current) {
