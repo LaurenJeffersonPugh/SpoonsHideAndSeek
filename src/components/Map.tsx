@@ -752,6 +752,8 @@ export const Map = ({ className }: { className?: string }) => {
                                 data: {
                                     lat: e.latlng.lat,
                                     lng: e.latlng.lng,
+                                    radius: 15,
+                                    unit: "kilometers",
                                 },
                             }),
                     },
@@ -760,10 +762,10 @@ export const Map = ({ className }: { className?: string }) => {
                         callback: (e: any) => {
                             const destination = turf.destination(
                                 [e.latlng.lng, e.latlng.lat],
-                                5,
+                                3,
                                 90,
                                 {
-                                    units: "miles",
+                                    units: "kilometers",
                                 },
                             );
 

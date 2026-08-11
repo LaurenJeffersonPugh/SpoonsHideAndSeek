@@ -46,7 +46,7 @@ export default defineConfig({
                     "**/*.{js,css,html,ico,png,svg,woff,woff2,geojson}",
                 ],
                 globIgnores: ["**/google-map-export*"],
-                maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+                maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
                 // The document is precached under this exact key (Astro base,
                 // no trailing slash), so offline navigations fall back to it.
                 navigateFallback: "/SpoonsHideAndSeek",

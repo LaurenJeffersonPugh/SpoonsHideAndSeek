@@ -355,10 +355,10 @@ const tutorialSteps: TutorialStep[] = [
                                 drag: true,
                                 lat: 35.6762,
                                 lng: 139.6503,
-                                radius: 15,
+                                radius: 1,
                                 unit: "miles",
                                 color: "red",
-                                locationType: "theme_park",
+                                locationType: "museum",
                                 location: false,
                             }}
                         />
@@ -366,8 +366,6 @@ const tutorialSteps: TutorialStep[] = [
                 </SidebarGroup>
                 <br />
                 <strong>Location Types:</strong>
-                <br />• <strong>15-Mile Radius:</strong> Theme Parks, Zoos,
-                Aquariums
                 <br />• <strong>1-Mile Radius:</strong> Museums, Hospitals,
                 Cinemas, Libraries
                 <br />• <strong>Custom:</strong> Define your own points of
@@ -410,7 +408,7 @@ const tutorialSteps: TutorialStep[] = [
                                 lng: 139.6503,
                                 color: "blue",
                                 same: true,
-                                type: "airport",
+                                type: "zoo_aquarium",
                             }}
                         />
                     </SidebarMenu>
@@ -425,11 +423,9 @@ const tutorialSteps: TutorialStep[] = [
                 3-10 for different granularities
                 <br />
                 <br />
-                <strong>Airport Matching:</strong>
-                <br />• Compares nearest commercial airports (those with IATA
-                codes)
-                <br />• Uses Voronoi diagrams to determine airport catchment
-                areas
+                <strong>Zoo & Aquarium Matching:</strong>
+                <br />• Compares nearest zoos or aquariums
+                <br />• Uses Voronoi diagrams to determine catchment areas
                 <br />
                 <br />
                 <strong>City Matching:</strong>
@@ -449,9 +445,8 @@ const tutorialSteps: TutorialStep[] = [
                 These require the game area to be relatively small (alternatives
                 also exist that function with Hiding Zone Mode for larger
                 games):
-                <br />• Aquariums, Zoos, Theme Parks
-                <br />• Mountains, Museums, Hospitals, Cinemas
-                <br />• Libraries, Golf Courses, Foreign Consulates, Parks
+                <br />• Greggs, Zoos & Aquariums, Museums, Hospitals, Cinemas
+                <br />• Libraries, Golf Courses, Parks
                 <br />
                 <br />
                 <strong>Hiding Zone Mode Variations:</strong>

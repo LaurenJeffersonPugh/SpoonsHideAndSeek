@@ -43,6 +43,13 @@ export const RadiusQuestionComponent = ({
             .map((q) => q.key)
             .indexOf(questionKey) + 1
     }`;
+    const presets = [
+        { label: "500m", radius: 500, unit: "meters" as const },
+        { label: "1km", radius: 1, unit: "kilometers" as const },
+        { label: "2km", radius: 2, unit: "kilometers" as const },
+        { label: "5km", radius: 5, unit: "kilometers" as const },
+        { label: "10km", radius: 10, unit: "kilometers" as const },
+    ];
 
     return (
         <QuestionCard
@@ -79,6 +86,25 @@ export const RadiusQuestionComponent = ({
                             questionModified((data.unit = unit))
                         }
                     />
+                </div>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+                <div className={cn(MENU_ITEM_CLASSNAME, "flex-wrap gap-1")}>
+                    {presets.map((preset) => (
+                        <button
+                            key={preset.label}
+                            type="button"
+                            className="rounded border px-2 py-1 text-xs disabled:opacity-50"
+                            disabled={!data.drag || $isLoading}
+                            onClick={() => {
+                                data.radius = preset.radius;
+                                data.unit = preset.unit;
+                                questionModified();
+                            }}
+                        >
+                            {preset.label}
+                        </button>
+                    ))}
                 </div>
             </SidebarMenuItem>
             <LatitudeLongitude

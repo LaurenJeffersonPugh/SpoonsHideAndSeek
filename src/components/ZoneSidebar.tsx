@@ -48,12 +48,10 @@ import {
     BLANK_GEOJSON,
     type CustomStation,
     findPlacesInZone,
-    findPlacesSpecificInZone,
     findTentacleLocations,
     nearestToQuestion,
     normalizeToStationFeatures,
     parseCustomStationsFromText,
-    QuestionSpecificLocation,
     type StationCircle,
     type StationPlace,
     trainLineNodeFinder,
@@ -650,51 +648,6 @@ export const ZoneSidebar = () => {
                                 return false;
                             });
                         }
-                    }
-                    if (
-                        question.id === "measuring" &&
-                        (question.data.type === "mcdonalds" ||
-                            question.data.type === "seven11")
-                    ) {
-                        const points = await findPlacesSpecificInZone(
-                            question.data.type === "mcdonalds"
-                                ? QuestionSpecificLocation.McDonalds
-                                : QuestionSpecificLocation.Seven11,
-                        );
-
-                        const nearestPoint = turf.nearestPoint(
-                            turf.point([question.data.lng, question.data.lat]),
-                            points as any,
-                        );
-
-                        const distance = turf.distance(
-                            turf.point([question.data.lng, question.data.lat]),
-                            nearestPoint as any,
-                            {
-                                units: "miles",
-                            },
-                        );
-
-                        circles = circles.filter((circle) => {
-                            const point = turf.point(
-                                turf.getCoord(circle.properties),
-                            );
-
-                            const nearest = turf.nearestPoint(
-                                point,
-                                points as any,
-                            );
-
-                            return question.data.hiderCloser
-                                ? turf.distance(point, nearest as any, {
-                                      units: "miles",
-                                  }) <
-                                      distance + $hidingRadius
-                                : turf.distance(point, nearest as any, {
-                                      units: "miles",
-                                  }) >
-                                      distance - $hidingRadius;
-                        });
                     }
                 }
 
@@ -1542,51 +1495,6 @@ async function selectionProcess(
                         distance + 1.61 * $hidingRadius,
                 )
                 .map((x) => turf.circle(x.properties.geometry, distance));
-
-            if (question.data.hiderCloser) {
-                mapData = safeUnion(
-                    turf.featureCollection([
-                        ...mapData.features,
-                        holedMask(turf.featureCollection(circles)),
-                    ]),
-                );
-            } else {
-                mapData = safeUnion(
-                    turf.featureCollection([...mapData.features, ...circles]),
-                );
-            }
-        }
-        if (
-            question.id === "measuring" &&
-            (question.data.type === "mcdonalds" ||
-                question.data.type === "seven11")
-        ) {
-            const points = await findPlacesSpecificInZone(
-                question.data.type === "mcdonalds"
-                    ? QuestionSpecificLocation.McDonalds
-                    : QuestionSpecificLocation.Seven11,
-            );
-
-            const seeker = turf.point([question.data.lng, question.data.lat]);
-            const nearest = turf.nearestPoint(seeker, points as any);
-
-            const distance = turf.distance(seeker, nearest, {
-                units: "miles",
-            });
-
-            const filtered = points.features.filter(
-                (x) =>
-                    turf.distance(x as any, station.properties.geometry, {
-                        units: "miles",
-                    }) <
-                    distance + $hidingRadius,
-            );
-
-            const circles = filtered.map((x) =>
-                turf.circle(x as any, distance, {
-                    units: "miles",
-                }),
-            );
 
             if (question.data.hiderCloser) {
                 mapData = safeUnion(

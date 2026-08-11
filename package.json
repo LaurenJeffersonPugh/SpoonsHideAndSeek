@@ -11,6 +11,7 @@
         "test": "vitest",
         "generate:spoons-zones": "node scripts/generate-spoons-hiding-zones.mjs",
         "generate:spoons-pois": "node scripts/generate-spoons-pois.mjs",
+        "generate:street-paths": "node scripts/generate-street-path-samples.mjs",
         "generate:admin-districts": "node scripts/generate-admin-districts.mjs",
         "cap:sync": "cross-env CAPACITOR=1 astro build && cap sync android",
         "cap:open": "cap open android",

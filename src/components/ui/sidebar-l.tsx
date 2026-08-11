@@ -8,7 +8,7 @@ import { TbEyeOff, TbMessage2Question } from "react-icons/tb";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
     Tooltip,
@@ -232,6 +232,7 @@ const Sidebar = React.forwardRef<
                     <SheetContent
                         data-sidebar="sidebar"
                         data-mobile="true"
+                        aria-describedby={undefined}
                         className="w-full bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden z-[1035]"
                         style={
                             {
@@ -240,6 +241,7 @@ const Sidebar = React.forwardRef<
                         }
                         side={side}
                     >
+                        <SheetTitle className="sr-only">Questions</SheetTitle>
                         <div className="flex h-full w-full flex-col">
                             {children}
                         </div>
@@ -301,6 +303,7 @@ const SidebarTrigger = React.forwardRef<
 >(({ className, onClick, ...props }, ref) => {
     const { toggleSidebar } = useStore(SidebarContext);
     const hidden = useHideSidebarTriggers();
+    const hiderOpen = useStore(hiderSidebarOpen);
 
     return (
         <button
@@ -309,7 +312,8 @@ const SidebarTrigger = React.forwardRef<
             size="icon"
             className={cn(
                 "bg-white hover:bg-[#f4f4f4] text-black rounded-sm border-2 border-black border-opacity-30 cursor-pointer py-1 px-2",
-                "flex items-center gap-1",
+                "flex items-center gap-1 transition-transform duration-200 ease-linear",
+                hiderOpen && "md:translate-x-[19rem]",
                 hidden && "hidden",
                 className,
             )}
@@ -331,6 +335,7 @@ const HiderSidebarTrigger = React.forwardRef<
     React.ComponentProps<"button">
 >(({ className, onClick, ...props }, ref) => {
     const hidden = useHideSidebarTriggers();
+    const hiderOpen = useStore(hiderSidebarOpen);
 
     return (
         <button
@@ -340,7 +345,8 @@ const HiderSidebarTrigger = React.forwardRef<
             title="Hider tools"
             className={cn(
                 "bg-white hover:bg-[#f4f4f4] text-black rounded-sm border-2 border-black border-opacity-30 cursor-pointer py-1 px-2",
-                "flex items-center gap-1",
+                "flex items-center gap-1 transition-transform duration-200 ease-linear",
+                hiderOpen && "md:translate-x-[19rem]",
                 hidden && "hidden",
                 className,
             )}

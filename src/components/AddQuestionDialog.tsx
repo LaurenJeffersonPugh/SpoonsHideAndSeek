@@ -32,7 +32,12 @@ export const AddQuestionDialog = ({
         const center = map.getCenter();
         addQuestion({
             id: "radius",
-            data: { lat: center.lat, lng: center.lng },
+            data: {
+                lat: center.lat,
+                lng: center.lng,
+                radius: 15,
+                unit: "kilometers",
+            },
         });
         return true;
     };
@@ -41,8 +46,8 @@ export const AddQuestionDialog = ({
         const map = leafletMapContext.get();
         if (!map) return false;
         const center = map.getCenter();
-        const destination = turf.destination([center.lng, center.lat], 5, 90, {
-            units: "miles",
+        const destination = turf.destination([center.lng, center.lat], 3, 90, {
+            units: "kilometers",
         });
 
         addQuestion({
@@ -82,9 +87,7 @@ export const AddQuestionDialog = ({
         const center = map.getCenter();
         addQuestion({
             id: "matching",
-            data: defaultCustomQuestions.get()
-                ? { lat: center.lat, lng: center.lng, type: "custom-points" }
-                : { lat: center.lat, lng: center.lng },
+            data: { lat: center.lat, lng: center.lng },
         });
         return true;
     };

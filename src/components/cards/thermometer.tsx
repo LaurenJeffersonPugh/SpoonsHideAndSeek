@@ -1,8 +1,12 @@
 import { useStore } from "@nanostores/react";
-import { distance, point } from "@turf/turf";
+import { destination, distance, point } from "@turf/turf";
 
 import { LatitudeLongitude } from "@/components/LatLngPicker";
 import { Label } from "@/components/ui/label";
+import {
+    MENU_ITEM_CLASSNAME,
+    SidebarMenuItem,
+} from "@/components/ui/sidebar-l";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { defaultUnit } from "@/lib/context";
 import {
@@ -64,6 +68,11 @@ export const ThermometerQuestionComponent = ({
             : DISTANCE_UNIT === "kilometers"
               ? "KM"
               : "Miles";
+    const presets = [
+        { label: "500m", distance: 500, unit: "meters" as const },
+        { label: "3km", distance: 3, unit: "kilometers" as const },
+        { label: "7.5km", distance: 7.5, unit: "kilometers" as const },
+    ];
 
     return (
         <QuestionCard
@@ -114,6 +123,31 @@ export const ThermometerQuestionComponent = ({
                     </span>
                 </div>
             )}
+            <SidebarMenuItem>
+                <div className={cn(MENU_ITEM_CLASSNAME, "flex-wrap gap-1")}>
+                    {presets.map((preset) => (
+                        <button
+                            key={preset.label}
+                            type="button"
+                            className="rounded border px-2 py-1 text-xs disabled:opacity-50"
+                            disabled={!data.drag || $isLoading || !hasCoords}
+                            onClick={() => {
+                                const next = destination(
+                                    point([data.lngA!, data.latA!]),
+                                    preset.distance,
+                                    90,
+                                    { units: preset.unit },
+                                );
+                                data.latB = next.geometry.coordinates[1];
+                                data.lngB = next.geometry.coordinates[0];
+                                questionModified();
+                            }}
+                        >
+                            {preset.label}
+                        </button>
+                    ))}
+                </div>
+            </SidebarMenuItem>
 
             <div className="flex gap-2 items-center p-2">
                 <Label

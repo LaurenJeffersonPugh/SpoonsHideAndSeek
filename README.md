@@ -17,16 +17,13 @@ A tool to trivially generate interactive maps for viewing hiding possibilities i
     - Same length of station's name
     - Same first letter of train station name
     - Same nearest park
-    - Same nearest amusement park
-    - Same nearest zoo
-    - Same nearest aquarium
+    - Same nearest Greggs
+    - Same nearest zoo or aquarium
     - Same nearest golf course
-    - Same nearest mountain
     - Same nearest museum
     - Same nearest movie theater
     - Same nearest hospital
     - Same nearest library
-    - Same nearest foreign consulate
 - Measuring
     - Distance to custom points/line/polygon
     - Distance to coastline
@@ -49,9 +46,6 @@ A tool to trivially generate interactive maps for viewing hiding possibilities i
     - Distance to foreign consulate
 - Tentacles
     - Custom locations
-    - Zoo
-    - Aquarium
-    - Amusement Park
     - Museum
     - Hospital
     - Movie theater

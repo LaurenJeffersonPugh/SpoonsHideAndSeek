@@ -76,9 +76,43 @@ export const polyGeoJSON = persistentAtom<FeatureCollection<
     decode: JSON.parse,
 });
 
+const decodeQuestions = (value: string): Questions => {
+    let parsed: unknown;
+
+    try {
+        parsed = JSON.parse(value);
+    } catch (error) {
+        console.warn("Could not read saved questions; resetting them.", error);
+        return [];
+    }
+
+    const fullResult = questionsSchema.safeParse(parsed);
+    if (fullResult.success) return fullResult.data;
+
+    if (!Array.isArray(parsed)) {
+        console.warn(
+            "Saved questions were not in a recognised format; resetting them.",
+            fullResult.error,
+        );
+        return [];
+    }
+
+    const validQuestions = parsed.flatMap((question) => {
+        const result = questionSchema.safeParse(question);
+        return result.success ? [result.data] : [];
+    });
+
+    console.warn(
+        `Dropped ${parsed.length - validQuestions.length} saved question(s) that are no longer supported.`,
+        fullResult.error,
+    );
+
+    return validQuestions;
+};
+
 export const questions = persistentAtom<Questions>("questions", [], {
     encode: JSON.stringify,
-    decode: (x) => questionsSchema.parse(JSON.parse(x)),
+    decode: decodeQuestions,
 });
 export const addQuestion = (question: DeepPartial<Question>) =>
     questionModified(questions.get().push(questionSchema.parse(question)));

@@ -14,12 +14,12 @@ import {
 import {
     fetchCoastline,
     findPlacesInZone,
-    findPlacesSpecificInZone,
+    getOverpassData,
     loadPregeneratedPois,
     LOCATION_FIRST_TAG,
     nearestToQuestion,
     prettifyLocation,
-    QuestionSpecificLocation,
+    loadAdminBoundaries,
 } from "@/maps/api";
 import {
     arcBufferToPoint,
@@ -33,6 +33,65 @@ import type {
     HomeGameMeasuringQuestions,
     MeasuringQuestion,
 } from "@/maps/schema";
+
+const osmTagForLocation = (location: APILocations) => {
+    if (location === "amusement_park") {
+        return { key: "tourism", value: "theme_park" };
+    }
+
+    return { key: LOCATION_FIRST_TAG[location], value: location };
+};
+
+const featureLines = (features: Feature[]) =>
+    features.flatMap((feature) => {
+        const type = turf.getType(feature);
+        if (type === "Polygon" || type === "MultiPolygon") {
+            const lines = turf.polygonToLine(feature as any);
+            return lines.type === "FeatureCollection"
+                ? lines.features
+                : [lines];
+        }
+        return [feature];
+    });
+
+const findInternationalBorderFeatures = async (lat: number, lng: number) => {
+    for (const radius of [25000, 50000, 100000, 250000, 500000]) {
+        const data = await getOverpassData(
+            `
+[out:json][timeout:60];
+(
+  way["boundary"="administrative"]["admin_level"="2"](around:${radius}, ${lat}, ${lng});
+  relation["boundary"="administrative"]["admin_level"="2"](around:${radius}, ${lat}, ${lng});
+);
+out geom;
+`,
+            "Finding international borders...",
+        );
+        const features = osmtogeojson(data).features as Feature[];
+        if (features.length > 0) {
+            return featureLines(features);
+        }
+    }
+
+    toast.error("No international border found nearby.");
+    return [turf.multiLineString([])];
+};
+
+const fetchElevationMeters = async (lat: number, lng: number) => {
+    const response = await fetch(
+        `https://api.open-meteo.com/v1/elevation?latitude=${lat}&longitude=${lng}`,
+    );
+    if (!response.ok) {
+        throw new Error(
+            `Elevation lookup failed: ${response.status} ${response.statusText}`,
+        );
+    }
+    const data = await response.json();
+    const elevation = Array.isArray(data.elevation)
+        ? data.elevation[0]
+        : data.elevation;
+    return typeof elevation === "number" ? elevation : null;
+};
 
 const highSpeedBase = _.memoize(
     (features: Feature[]) => {
@@ -101,6 +160,34 @@ export const determineMeasuringBoundary = async (
 
             return [highSpeedBase(features)];
         }
+        case "international-border": {
+            return await findInternationalBorderFeatures(
+                question.lat,
+                question.lng,
+            );
+        }
+        case "council-border":
+        case "ward-border": {
+            const boundaries = await loadAdminBoundaries(
+                question.type === "council-border" ? 8 : 10,
+            );
+            const point = turf.point([question.lng, question.lat]);
+            const containing = boundaries.find((boundary) =>
+                turf.booleanPointInPolygon(point, boundary),
+            );
+
+            if (!containing) {
+                toast.error(
+                    "That point isn't inside any administration district.",
+                );
+                return [turf.multiLineString([])];
+            }
+
+            const boundaryLines = turf.polygonToLine(containing);
+            return boundaryLines.type === "FeatureCollection"
+                ? boundaryLines.features
+                : [boundaryLines];
+        }
         case "coastline": {
             const coastline = turf.lineToPolygon(
                 await fetchCoastline(),
@@ -160,34 +247,31 @@ export const determineMeasuringBoundary = async (
                     ),
                 ).features[0],
             ];
-        case "city":
-            return [
-                turf.combine(
-                    turf.featureCollection(
-                        (
-                            await findPlacesInZone(
-                                '[place=city]["population"~"^[1-9]+[0-9]{6}$"]', // The regex is faster than (if:number(t["population"])>1000000)
-                                "Finding cities...",
-                            )
-                        ).elements.map((x: any) =>
-                            turf.point([
-                                x.center ? x.center.lon : x.lon,
-                                x.center ? x.center.lat : x.lat,
-                            ]),
-                        ),
-                    ),
-                ).features[0],
-            ];
-        case "aquarium-full":
-        case "zoo-full":
-        case "theme_park-full":
+        case "body-water": {
+            const data = await findPlacesInZone(
+                '["natural"="water"]',
+                "Finding bodies of water...",
+                "nwr",
+                "geom",
+                [
+                    '["water"="lake"]',
+                    '["water"="reservoir"]',
+                    '["waterway"="river"]',
+                    '["waterway"="canal"]',
+                    '["waterway"="stream"]',
+                ],
+                60,
+            );
+            return featureLines(osmtogeojson(data).features as Feature[]);
+        }
+        case "zoo_aquarium-full":
+        case "amusement_park-full":
         case "peak-full":
         case "museum-full":
         case "hospital-full":
         case "cinema-full":
         case "library-full":
         case "golf_course-full":
-        case "consulate-full":
         case "park-full": {
             const location = question.type.split("-full")[0] as APILocations;
 
@@ -201,8 +285,9 @@ export const determineMeasuringBoundary = async (
                 // Local dataset missing — fall back to a live Overpass query.
             }
 
+            const tag = osmTagForLocation(location);
             const data = await findPlacesInZone(
-                `[${LOCATION_FIRST_TAG[location]}=${location}]`,
+                `[${tag.key}=${tag.value}]`,
                 `Finding ${prettifyLocation(location, true).toLowerCase()}...`,
                 "nwr",
                 "center",
@@ -247,8 +332,8 @@ export const determineMeasuringBoundary = async (
             return turf.combine(
                 turf.featureCollection((question as any).geo.features),
             ).features;
-        case "aquarium":
-        case "zoo":
+        case "zoo_aquarium":
+        case "sea-level":
         case "theme_park":
         case "peak":
         case "museum":
@@ -258,8 +343,6 @@ export const determineMeasuringBoundary = async (
         case "golf_course":
         case "consulate":
         case "park":
-        case "mcdonalds":
-        case "seven11":
         case "rail-measure":
             return false;
     }
@@ -313,6 +396,7 @@ export const hiderifyMeasuring = async (
 
     if (
         [
+            "zoo_aquarium",
             "aquarium",
             "zoo",
             "theme_park",
@@ -373,30 +457,28 @@ export const hiderifyMeasuring = async (
         const hiderDistance = turf.distance(hider, hiderNearest);
 
         question.hiderCloser = hiderDistance < distance;
+        return question;
     }
 
-    if (question.type === "mcdonalds" || question.type === "seven11") {
-        const points = await findPlacesSpecificInZone(
-            question.type === "mcdonalds"
-                ? QuestionSpecificLocation.McDonalds
-                : QuestionSpecificLocation.Seven11,
-        );
+    if (question.type === "sea-level") {
+        try {
+            const seekerElevation = await fetchElevationMeters(
+                question.lat,
+                question.lng,
+            );
+            const hiderElevation = await fetchElevationMeters(
+                $hiderMode.latitude,
+                $hiderMode.longitude,
+            );
 
-        const seeker = turf.point([question.lng, question.lat]);
-        const nearest = turf.nearestPoint(seeker, points as any);
+            if (seekerElevation !== null && hiderElevation !== null) {
+                question.hiderCloser =
+                    Math.abs(hiderElevation) < Math.abs(seekerElevation);
+            }
+        } catch {
+            toast.error("Could not look up elevation for sea level question.");
+        }
 
-        const distance = turf.distance(seeker, nearest, {
-            units: "miles",
-        });
-
-        const hider = turf.point([$hiderMode.longitude, $hiderMode.latitude]);
-        const hiderNearest = turf.nearestPoint(hider, points as any);
-
-        const hiderDistance = turf.distance(hider, hiderNearest, {
-            units: "miles",
-        });
-
-        question.hiderCloser = hiderDistance < distance;
         return question;
     }
 

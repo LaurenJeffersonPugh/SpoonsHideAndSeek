@@ -31,7 +31,9 @@ export const LOCATION_FIRST_TAG: {
         | "diplomatic"
         | "natural";
 } = {
+    amusement_park: "tourism",
     aquarium: "tourism",
+    zoo_aquarium: "tourism",
     hospital: "amenity",
     peak: "natural",
     museum: "tourism",

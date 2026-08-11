@@ -1,5 +1,11 @@
 import * as turf from "@turf/turf";
-import type { FeatureCollection, Point } from "geojson";
+import type {
+    Feature,
+    FeatureCollection,
+    MultiPolygon,
+    Point,
+    Polygon,
+} from "geojson";
 import _ from "lodash";
 import osmtogeojson from "osmtogeojson";
 import { toast } from "react-toastify";
@@ -12,8 +18,10 @@ import {
 } from "@/lib/context";
 import {
     findPlacesInZone,
+    getOverpassData,
     loadAdminBoundaries,
     loadPregeneratedPois,
+    loadStreetPathSamples,
     LOCATION_FIRST_TAG,
     nearestToQuestion,
     prettifyLocation,
@@ -27,24 +35,140 @@ import type {
     MatchingQuestion,
 } from "@/maps/schema";
 
+const nearestStreetOrPathName = async (lat: number, lng: number) => {
+    const radii = [100, 250, 500, 1000];
+
+    for (const radius of radii) {
+        const data = await getOverpassData(
+            `
+[out:json][timeout:25];
+way["highway"]["name"](around:${radius}, ${lat}, ${lng});
+out center tags;
+`,
+            "Finding nearby streets and paths...",
+        );
+
+        const hiderPoint = turf.point([lng, lat]);
+        const candidates = (data.elements ?? [])
+            .filter((element: any) => element.tags?.name)
+            .map((element: any) => {
+                const lon = element.center?.lon ?? element.lon;
+                const pointLat = element.center?.lat ?? element.lat;
+                if (typeof lon !== "number" || typeof pointLat !== "number") {
+                    return null;
+                }
+
+                return turf.point([lon, pointLat], {
+                    name: element.tags.name,
+                });
+            })
+            .filter(Boolean);
+
+        if (candidates.length > 0) {
+            return turf.nearestPoint(
+                hiderPoint,
+                turf.featureCollection(candidates as any),
+            ).properties.name as string;
+        }
+    }
+
+    return null;
+};
+
+const STREET_PATH_SAMPLE_INTERVAL_METERS = 150;
+
+const findStreetOrPathSamplePointsInZone = _.memoize(
+    async () => {
+        try {
+            const features = await loadStreetPathSamples();
+            return turf.featureCollection(features);
+        } catch {
+            // Static street/path data has not been generated yet; fall back to
+            // the cached Overpass lookup so development still works.
+        }
+
+        const data = await findPlacesInZone(
+            '["highway"]["name"]',
+            "Finding streets and paths...",
+            "way",
+            "geom",
+            [],
+            60,
+        );
+
+        const samplePoints: Feature<Point>[] = [];
+        const seen = new Set<string>();
+
+        const addSamplePoint = (
+            name: string,
+            coordinates: [number, number],
+        ) => {
+            const key = `${name}:${coordinates
+                .map((coordinate) => coordinate.toFixed(5))
+                .join(",")}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            samplePoints.push(turf.point(coordinates, { name }));
+        };
+
+        for (const element of data.elements ?? []) {
+            const name = element.tags?.name?.trim();
+            const geometry = element.geometry;
+            if (!name || !Array.isArray(geometry) || geometry.length < 2) {
+                continue;
+            }
+
+            const coordinates = geometry
+                .map((coordinate: any) => [coordinate.lon, coordinate.lat])
+                .filter(
+                    (coordinate: any) =>
+                        typeof coordinate[0] === "number" &&
+                        typeof coordinate[1] === "number",
+                ) as [number, number][];
+            if (coordinates.length < 2) continue;
+
+            const line = turf.lineString(coordinates, { name });
+            const lengthMeters = turf.length(line, { units: "meters" });
+            if (!Number.isFinite(lengthMeters) || lengthMeters <= 0) continue;
+
+            for (
+                let distance = 0;
+                distance < lengthMeters;
+                distance += STREET_PATH_SAMPLE_INTERVAL_METERS
+            ) {
+                addSamplePoint(
+                    name,
+                    turf.along(line, distance, {
+                        units: "meters",
+                    }).geometry.coordinates as [number, number],
+                );
+            }
+
+            addSamplePoint(name, coordinates[coordinates.length - 1]);
+        }
+
+        return turf.featureCollection(samplePoints);
+    },
+    () =>
+        JSON.stringify({
+            polyGeoJSON: polyGeoJSON.get(),
+            mapGeoLocation: mapGeoLocation.get(),
+        }),
+);
+
+const nearestStreetOrPathNameInZone = async (lat: number, lng: number) => {
+    const streetPathSamples = await findStreetOrPathSamplePointsInZone();
+    if (streetPathSamples.features.length === 0) {
+        return nearestStreetOrPathName(lat, lng);
+    }
+
+    return turf.nearestPoint(turf.point([lng, lat]), streetPathSamples)
+        .properties
+        .name as string;
+};
+
 export const findMatchingPlaces = async (question: MatchingQuestion) => {
     switch (question.type) {
-        case "airport": {
-            return _.uniqBy(
-                (
-                    await findPlacesInZone(
-                        '["aeroway"="aerodrome"]["iata"]', // Only commercial airports have IATA codes,
-                        "Finding airports...",
-                    )
-                ).elements,
-                (feature: any) => feature.tags.iata,
-            ).map((x) =>
-                turf.point([
-                    x.center ? x.center.lon : x.lon,
-                    x.center ? x.center.lat : x.lat,
-                ]),
-            );
-        }
         case "major-city": {
             return (
                 await findPlacesInZone(
@@ -61,16 +185,13 @@ export const findMatchingPlaces = async (question: MatchingQuestion) => {
         case "custom-points": {
             return question.geo!;
         }
-        case "aquarium-full":
-        case "zoo-full":
+        case "zoo_aquarium-full":
         case "theme_park-full":
-        case "peak-full":
         case "museum-full":
         case "hospital-full":
         case "cinema-full":
         case "library-full":
         case "golf_course-full":
-        case "consulate-full":
         case "park-full": {
             const location = question.type.split("-full")[0] as APILocations;
 
@@ -125,21 +246,39 @@ export const determineMatchingBoundary = _.memoize(
         let boundary;
 
         switch (question.type) {
-            case "aquarium":
-            case "zoo":
+            case "zoo_aquarium":
             case "theme_park":
-            case "peak":
             case "museum":
             case "hospital":
             case "cinema":
             case "library":
             case "golf_course":
-            case "consulate":
             case "park":
             case "same-first-letter-station":
             case "same-length-station":
             case "same-train-line": {
                 return false;
+            }
+            case "street-path": {
+                const streetPathSamples =
+                    await findStreetOrPathSamplePointsInZone();
+                if (streetPathSamples.features.length === 0) return false;
+
+                const nearestName = turf.nearestPoint(
+                    turf.point([question.lng, question.lat]),
+                    streetPathSamples,
+                ).properties.name as string;
+                const voronoi = geoSpatialVoronoi(streetPathSamples);
+                const matchingCells = voronoi.features.filter(
+                    (feature) =>
+                        feature.properties?.site?.properties?.name ===
+                        nearestName,
+                ) as Feature<Polygon | MultiPolygon>[];
+
+                if (matchingCells.length === 0) return false;
+
+                boundary = safeUnion(turf.featureCollection(matchingCells));
+                break;
             }
             case "custom-zone": {
                 boundary = question.geo;
@@ -200,18 +339,14 @@ export const determineMatchingBoundary = _.memoize(
 
                 break;
             }
-            case "airport":
             case "major-city":
-            case "aquarium-full":
-            case "zoo-full":
+            case "zoo_aquarium-full":
             case "theme_park-full":
-            case "peak-full":
             case "museum-full":
             case "hospital-full":
             case "cinema-full":
             case "library-full":
             case "golf_course-full":
-            case "consulate-full":
             case "park-full":
             case "custom-points": {
                 const data = await findMatchingPlaces(question);
@@ -270,16 +405,13 @@ export const hiderifyMatching = async (
 
     if (
         [
-            "aquarium",
-            "zoo",
+            "zoo_aquarium",
             "theme_park",
-            "peak",
             "museum",
             "hospital",
             "cinema",
             "library",
             "golf_course",
-            "consulate",
             "park",
         ].includes(question.type)
     ) {
@@ -306,13 +438,31 @@ export const hiderifyMatching = async (
     if (
         question.type === "same-first-letter-station" ||
         question.type === "same-length-station" ||
-        question.type === "same-train-line"
+        question.type === "same-train-line" ||
+        question.type === "street-path"
     ) {
         const hiderPoint = turf.point([
             $hiderMode.longitude,
             $hiderMode.latitude,
         ]);
         const seekerPoint = turf.point([question.lng, question.lat]);
+
+        if (question.type === "street-path") {
+            const hiderStreet = await nearestStreetOrPathNameInZone(
+                $hiderMode.latitude,
+                $hiderMode.longitude,
+            );
+            const seekerStreet = await nearestStreetOrPathNameInZone(
+                question.lat,
+                question.lng,
+            );
+
+            if (hiderStreet && seekerStreet) {
+                question.same = hiderStreet === seekerStreet;
+            }
+
+            return question;
+        }
 
         const places = osmtogeojson(
             await findPlacesInZone(

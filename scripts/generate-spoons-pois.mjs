@@ -10,6 +10,7 @@ import * as turf from "@turf/turf";
 // brand) — the internal key stays "theme_park" so all existing plumbing keeps
 // working, but it queries brand=Greggs and displays as "Greggs".
 const POI_SELECTORS = [
+    { location: "amusement_park", key: "tourism", value: "theme_park" },
     { location: "aquarium", key: "tourism", value: "aquarium" },
     { location: "zoo", key: "tourism", value: "zoo" },
     { location: "theme_park", key: "brand", value: "Greggs" },
@@ -21,6 +22,7 @@ const POI_SELECTORS = [
     { location: "golf_course", key: "leisure", value: "golf_course" },
     { location: "consulate", key: "diplomatic", value: "consulate" },
     { location: "park", key: "leisure", value: "park" },
+    { location: "body_water", key: "natural", value: "water" },
 ];
 
 // Real POIs that aren't (yet) mapped in OpenStreetMap, so the Overpass query

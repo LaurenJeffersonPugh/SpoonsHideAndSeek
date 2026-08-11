@@ -47,11 +47,63 @@ const CATEGORY_OPTIONS = [
     { value: "library", label: "Library" },
     { value: "park", label: "Park" },
     { value: "golf_course", label: "Golf course" },
-    { value: "zoo", label: "Zoo" },
-    { value: "aquarium", label: "Aquarium" },
+    { value: "zoo_aquarium", label: "Zoo & Aquarium" },
+    { value: "street-path", label: "Street or Path" },
+    { value: "airport", label: "Airport" },
+    { value: "highspeed-measure-shinkansen", label: "High-Speed Train Line" },
+    { value: "rail-measure", label: "Rail Station" },
+    { value: "international-border", label: "International Border" },
+    { value: "council-border", label: "Local Council Border" },
+    { value: "ward-border", label: "Ward Border" },
+    { value: "sea-level", label: "Sea Level" },
+    { value: "body-water", label: "Body of Water" },
+    { value: "coastline", label: "Coastline" },
+    { value: "amusement_park-full", label: "Amusement Park" },
     { value: "peak", label: "Mountain" },
     { value: "consulate", label: "Consulate" },
 ];
+
+const MATCHING_CATEGORY_OPTIONS = CATEGORY_OPTIONS.filter((option) =>
+    [
+        "street-path",
+        "park",
+        "zoo_aquarium",
+        "golf_course",
+        "museum",
+        "cinema",
+        "hospital",
+        "library",
+    ].includes(option.value),
+);
+
+const MEASURING_CATEGORY_OPTIONS = CATEGORY_OPTIONS.filter((option) =>
+    [
+        "airport",
+        "highspeed-measure-shinkansen",
+        "rail-measure",
+        "international-border",
+        "council-border",
+        "ward-border",
+        "sea-level",
+        "body-water",
+        "coastline",
+        "peak",
+        "park",
+        "amusement_park-full",
+        "zoo_aquarium",
+        "golf_course",
+        "museum",
+        "cinema",
+        "hospital",
+        "library",
+    ].includes(option.value),
+);
+
+const TENTACLE_CATEGORY_OPTIONS = CATEGORY_OPTIONS.filter((option) =>
+    ["theme_park", "museum", "hospital", "cinema", "library"].includes(
+        option.value,
+    ),
+);
 
 const inputClass =
     "w-full rounded border border-white/20 bg-black/30 px-2 py-1 text-sm text-white";
@@ -123,6 +175,21 @@ export const HiderSidebar = () => {
         const id = setTimeout(() => setPasteMsg(null), 2000);
         return () => clearTimeout(id);
     }, [pasteMsg]);
+
+    const categoryOptions =
+        type === "tentacles"
+            ? TENTACLE_CATEGORY_OPTIONS
+            : type === "measuring"
+              ? MEASURING_CATEGORY_OPTIONS
+              : type === "matching"
+                ? MATCHING_CATEGORY_OPTIONS
+                : CATEGORY_OPTIONS;
+
+    useEffect(() => {
+        if (!categoryOptions.find((option) => option.value === category)) {
+            setCategory(categoryOptions[0]?.value ?? CATEGORY_OPTIONS[0].value);
+        }
+    }, [category, categoryOptions]);
 
     // Read the clipboard and fill the seeker's coordinate fields from a pasted
     // "lat, lng" string. For thermometer this fills the start point.
@@ -642,7 +709,7 @@ export const HiderSidebar = () => {
                                 value={category}
                                 onChange={(e) => setCategory(e.target.value)}
                             >
-                                {CATEGORY_OPTIONS.map((c) => (
+                                {categoryOptions.map((c) => (
                                     <option key={c.value} value={c.value}>
                                         {c.label}
                                     </option>

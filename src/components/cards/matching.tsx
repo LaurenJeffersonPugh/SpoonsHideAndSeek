@@ -15,7 +15,6 @@ import {
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
     customInitPreference,
-    displayHidingZones,
     drawingQuestionKey,
     hiderMode,
     isLoading,
@@ -28,12 +27,7 @@ import {
     determineMatchingBoundary,
     findMatchingPlaces,
 } from "@/maps/questions/matching";
-import {
-    determineUnionizedStrings,
-    type MatchingQuestion,
-    matchingQuestionSchema,
-    NO_GROUP,
-} from "@/maps/schema";
+import { type MatchingQuestion } from "@/maps/schema";
 
 import { QuestionCard } from "./base";
 
@@ -51,7 +45,6 @@ export const MatchingQuestionComponent = ({
     useStore(triggerLocalRefresh);
     const $hiderMode = useStore(hiderMode);
     const $questions = useStore(questions);
-    const $displayHidingZones = useStore(displayHidingZones);
     const $drawingQuestionKey = useStore(drawingQuestionKey);
     const $isLoading = useStore(isLoading);
     const $customInitPref = useStore(customInitPreference);
@@ -71,57 +64,32 @@ export const MatchingQuestionComponent = ({
 
     switch (data.type) {
         case "zone":
+            questionSpecific = <></>;
+            break;
         case "letter-zone":
             questionSpecific = (
-                <>
-                    <SidebarMenuItem className={MENU_ITEM_CLASSNAME}>
-                        <Select
-                            trigger="Administration District"
-                            options={{
-                                8: "Council",
-                                10: "District (ward)",
-                            }}
-                            value={data.cat.adminLevel.toString()}
-                            onValueChange={(value) =>
-                                questionModified(
-                                    (data.cat.adminLevel = parseInt(value) as
-                                        | 8
-                                        | 10),
-                                )
-                            }
-                            disabled={!data.drag || $isLoading}
-                        />
-                    </SidebarMenuItem>
-                    {data.type === "letter-zone" && (
-                        <span className="px-2 text-center text-orange-500">
-                            Warning: The zone data has been simplified by
-                            &plusmn;360 feet (100 meters) in order for the
-                            browser to not crash.
-                        </span>
-                    )}
-                </>
-            );
-            break;
-        case "same-train-line":
-            questionSpecific = (
                 <span className="px-2 text-center text-orange-500">
-                    Warning: The train line data is based on OpenStreetMap and
-                    may have fewer train stations than expected. If you are
-                    using this tool, ensure that the other players are also
-                    using this tool.
+                    Admin boundaries are simplified for performance, so results
+                    near borders may be approximate.
                 </span>
             );
             break;
-        case "aquarium":
-        case "hospital":
-        case "peak":
-        case "museum":
+        case "same-train-line":
+        case "street-path":
+            questionSpecific = (
+                <span className="px-2 text-center text-orange-500">
+                    This question is answered from OpenStreetMap data, so both
+                    players should use this tool for consistency.
+                </span>
+            );
+            break;
+        case "zoo_aquarium":
         case "theme_park":
-        case "zoo":
+        case "hospital":
+        case "museum":
         case "cinema":
         case "library":
         case "golf_course":
-        case "consulate":
         case "park":
             questionSpecific = (
                 <span className="px-2 text-center text-orange-500">
@@ -202,18 +170,14 @@ export const MatchingQuestionComponent = ({
                             await determineMatchingBoundary(data);
                     } else {
                         if (
-                            data.type === "airport" ||
                             data.type === "major-city" ||
-                            data.type === "aquarium-full" ||
-                            data.type === "zoo-full" ||
+                            data.type === "zoo_aquarium-full" ||
                             data.type === "theme_park-full" ||
-                            data.type === "peak-full" ||
                             data.type === "museum-full" ||
                             data.type === "hospital-full" ||
                             data.type === "cinema-full" ||
                             data.type === "library-full" ||
                             data.type === "golf_course-full" ||
-                            data.type === "consulate-full" ||
                             data.type === "park-full"
                         ) {
                             (data as any).geo = await findMatchingPlaces(data);
@@ -230,63 +194,40 @@ export const MatchingQuestionComponent = ({
             <SidebarMenuItem className={MENU_ITEM_CLASSNAME}>
                 <Select
                     trigger="Matching Type"
-                    options={Object.fromEntries(
-                        matchingQuestionSchema.options
-                            .filter((x) => x.description === NO_GROUP)
-                            .flatMap((x) =>
-                                determineUnionizedStrings(x.shape.type),
-                            )
-                            // Spoons: surface the "(Small+Medium Games)"
-                            // variants (the "-full" types) first; the full-game
-                            // variants sort below them.
-                            .sort((a, b) => {
-                                const isFull = (o: any) =>
-                                    String(o._def.value).endsWith("-full");
-                                return Number(isFull(b)) - Number(isFull(a));
-                            })
-                            .map((x) => [(x._def as any).value, x.description]),
-                    )}
-                    groups={matchingQuestionSchema.options
-                        .filter((x) => x.description !== NO_GROUP)
-                        .map((x) => [
-                            x.description,
-                            Object.fromEntries(
-                                determineUnionizedStrings(x.shape.type).map(
-                                    (x) => [
-                                        (x._def as any).value,
-                                        x.description,
-                                    ],
-                                ),
-                            ),
-                        ])
-                        .reduce(
-                            (acc, [key, value]) => {
-                                const values = {
-                                    disabled: !$displayHidingZones,
-                                    options: value,
-                                };
-
-                                if (acc[key]) {
-                                    acc[key].options = {
-                                        ...acc[key].options,
-                                        ...value,
-                                    };
-                                } else {
-                                    acc[key] = values;
-                                }
-
-                                return acc;
-                            },
-                            {} as Record<
-                                string,
-                                {
-                                    disabled: boolean;
-                                    options: Record<string, string>;
-                                }
-                            >,
-                        )}
-                    value={data.type}
+                    options={{
+                        "same-train-line": "Transit Line",
+                        "same-length-station": "Station Name Length",
+                        "street-path": "Street or Path",
+                        "local-council": "Local Council",
+                        ward: "Ward",
+                        "park-full": "Park",
+                        "zoo_aquarium-full": "Zoo & Aquarium",
+                        "golf_course-full": "Golf Course",
+                        "museum-full": "Museum",
+                        "cinema-full": "Movie Theatre",
+                        "hospital-full": "Hospital",
+                        "library-full": "Library",
+                    }}
+                    groups={{}}
+                    value={
+                        data.type === "zone" &&
+                        (data as any).cat.adminLevel === 8
+                            ? "local-council"
+                            : data.type === "zone" &&
+                                (data as any).cat.adminLevel === 10
+                              ? "ward"
+                              : data.type
+                    }
                     onValueChange={async (value) => {
+                        if (value === "local-council" || value === "ward") {
+                            data.type = "zone";
+                            (data as any).cat = {
+                                adminLevel: value === "local-council" ? 8 : 10,
+                            };
+                            questionModified();
+                            return;
+                        }
+
                         if (
                             value === "custom-zone" ||
                             value === "custom-points"
@@ -315,18 +256,14 @@ export const MatchingQuestionComponent = ({
                                         await determineMatchingBoundary(data);
                                 } else {
                                     if (
-                                        data.type === "airport" ||
                                         data.type === "major-city" ||
-                                        data.type === "aquarium-full" ||
-                                        data.type === "zoo-full" ||
+                                        data.type === "zoo_aquarium-full" ||
                                         data.type === "theme_park-full" ||
-                                        data.type === "peak-full" ||
                                         data.type === "museum-full" ||
                                         data.type === "hospital-full" ||
                                         data.type === "cinema-full" ||
                                         data.type === "library-full" ||
                                         data.type === "golf_course-full" ||
-                                        data.type === "consulate-full" ||
                                         data.type === "park-full"
                                     ) {
                                         (data as any).geo =

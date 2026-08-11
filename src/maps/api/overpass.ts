@@ -87,6 +87,16 @@ const poiDataUrl = (location: string) =>
 export const loadPregeneratedPois = async (
     location: APILocations,
 ): Promise<Feature<Point>[]> => {
+    if (location === "zoo_aquarium") {
+        const [zoos, aquariums] = await Promise.all([
+            loadPregeneratedPois("zoo"),
+            loadPregeneratedPois("aquarium"),
+        ]);
+        return _.uniqBy([...zoos, ...aquariums], (feature) =>
+            String(feature.properties?.name ?? ""),
+        );
+    }
+
     const response = await fetch(poiDataUrl(location));
     if (!response.ok) {
         throw new Error(
@@ -120,6 +130,19 @@ export const loadAdminBoundaries = async (
     const geo = (await response.json()) as FeatureCollection<
         Polygon | MultiPolygon
     >;
+    return geo.features;
+};
+
+export const loadStreetPathSamples = async (): Promise<Feature<Point>[]> => {
+    const response = await fetch(
+        `${import.meta.env.BASE_URL.replace(/\/?$/, "/")}data/street-path-samples.geojson`,
+    );
+    if (!response.ok) {
+        throw new Error(
+            `Failed to load pregenerated street/path samples: ${response.status} ${response.statusText}`,
+        );
+    }
+    const geo = (await response.json()) as FeatureCollection<Point>;
     return geo.features;
 };
 
@@ -198,13 +221,31 @@ export const findTentacleLocations = async (
         // Local dataset missing — fall back to a live Overpass query.
     }
 
-    const query = `
+    const query =
+        question.locationType === "zoo_aquarium"
+            ? `
 [out:json][timeout:25];
-nwr["${LOCATION_FIRST_TAG[question.locationType]}"="${question.locationType}"](around:${turf.convertLength(
+(
+    nwr["tourism"="zoo"](around:${turf.convertLength(
         question.radius,
         question.unit,
         "meters",
     )}, ${question.lat}, ${question.lng});
+    nwr["tourism"="aquarium"](around:${turf.convertLength(
+        question.radius,
+        question.unit,
+        "meters",
+    )}, ${question.lat}, ${question.lng});
+);
+out center;
+    `
+            : `
+[out:json][timeout:25];
+nwr["${LOCATION_FIRST_TAG[question.locationType]}"="${question.locationType}"](around:${turf.convertLength(
+                  question.radius,
+                  question.unit,
+                  "meters",
+              )}, ${question.lat}, ${question.lng});
 out center;
     `;
     const data = await getOverpassData(query, text);

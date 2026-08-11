@@ -14,7 +14,6 @@ import {
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
     customInitPreference,
-    displayHidingZones,
     drawingQuestionKey,
     hiderMode,
     isLoading,
@@ -24,12 +23,7 @@ import {
 } from "@/lib/context";
 import { cn } from "@/lib/utils";
 import { determineMeasuringBoundary } from "@/maps/questions/measuring";
-import {
-    determineUnionizedStrings,
-    type MeasuringQuestion,
-    measuringQuestionSchema,
-    NO_GROUP,
-} from "@/maps/schema";
+import { type MeasuringQuestion } from "@/maps/schema";
 
 import { QuestionCard } from "./base";
 
@@ -47,7 +41,6 @@ export const MeasuringQuestionComponent = ({
     useStore(triggerLocalRefresh);
     const $hiderMode = useStore(hiderMode);
     const $questions = useStore(questions);
-    const $displayHidingZones = useStore(displayHidingZones);
     const $drawingQuestionKey = useStore(drawingQuestionKey);
     const $isLoading = useStore(isLoading);
     const $customInitPref = useStore(customInitPreference);
@@ -63,23 +56,11 @@ export const MeasuringQuestionComponent = ({
     let questionSpecific = <></>;
 
     switch (data.type) {
-        case "mcdonalds":
-        case "seven11":
-            questionSpecific = (
-                <span className="px-2 text-center text-orange-500">
-                    This question will eliminate hiding zones that don&apos;t
-                    fit the criteria. When you click on a zone, the parts of
-                    that zone that don&apos;t satisfy the criteria will be
-                    eliminated.
-                </span>
-            );
-            break;
-        case "aquarium":
+        case "zoo_aquarium":
         case "hospital":
         case "peak":
         case "museum":
         case "theme_park":
-        case "zoo":
         case "cinema":
         case "library":
         case "golf_course":
@@ -172,61 +153,27 @@ export const MeasuringQuestionComponent = ({
             <SidebarMenuItem className={MENU_ITEM_CLASSNAME}>
                 <Select
                     trigger="Measuring Type"
-                    options={Object.fromEntries(
-                        measuringQuestionSchema.options
-                            .filter((x) => x.description === NO_GROUP)
-                            .flatMap((x) =>
-                                determineUnionizedStrings(x.shape.type),
-                            )
-                            // Spoons: surface the "(Small+Medium Games)"
-                            // variants (the "-full" types) first; the full-game
-                            // variants sort below them.
-                            .sort((a, b) => {
-                                const isFull = (o: any) =>
-                                    String(o._def.value).endsWith("-full");
-                                return Number(isFull(b)) - Number(isFull(a));
-                            })
-                            .map((x) => [(x._def as any).value, x.description]),
-                    )}
-                    groups={measuringQuestionSchema.options
-                        .filter((x) => x.description !== NO_GROUP)
-                        .map((x) => [
-                            x.description,
-                            Object.fromEntries(
-                                determineUnionizedStrings(x.shape.type).map(
-                                    (x) => [
-                                        (x._def as any).value,
-                                        x.description,
-                                    ],
-                                ),
-                            ),
-                        ])
-                        .reduce(
-                            (acc, [key, value]) => {
-                                const values = {
-                                    disabled: !$displayHidingZones,
-                                    options: value,
-                                };
-
-                                if (acc[key]) {
-                                    acc[key].options = {
-                                        ...acc[key].options,
-                                        ...value,
-                                    };
-                                } else {
-                                    acc[key] = values;
-                                }
-
-                                return acc;
-                            },
-                            {} as Record<
-                                string,
-                                {
-                                    disabled: boolean;
-                                    options: Record<string, string>;
-                                }
-                            >,
-                        )}
+                    options={{
+                        airport: "Airport",
+                        "highspeed-measure-shinkansen": "High-Speed Train Line",
+                        "rail-measure": "Rail Station",
+                        "international-border": "International Border",
+                        "council-border": "Local Council Border",
+                        "ward-border": "Ward Border",
+                        "sea-level": "Sea Level",
+                        "body-water": "Body of Water",
+                        coastline: "Coastline",
+                        "peak-full": "Mountain",
+                        "park-full": "Park",
+                        "amusement_park-full": "Amusement Park",
+                        "zoo_aquarium-full": "Zoo & Aquariums",
+                        "golf_course-full": "Golf Course",
+                        "museum-full": "Museum",
+                        "cinema-full": "Movie Theatre",
+                        "hospital-full": "Hospital",
+                        "library-full": "Library",
+                    }}
+                    groups={{}}
                     value={data.type}
                     onValueChange={async (value) => {
                         if (value === "custom-measure") {
