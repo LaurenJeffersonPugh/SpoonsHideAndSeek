@@ -176,8 +176,8 @@ const highAccuracyLocationOptions: PositionOptions = {
 
 const fallbackLocationOptions: PositionOptions = {
     enableHighAccuracy: false,
-    maximumAge: 60000,
-    timeout: 15000,
+    maximumAge: 5 * 60 * 1000,
+    timeout: 30000,
 };
 
 const isRetryableLocationError = (error: GeolocationPositionError) =>
@@ -317,6 +317,7 @@ const SpoonsLocationStatus = () => {
     const map = useMap();
     const markerRef = useRef<L.Marker | null>(null);
     const accuracyCircleRef = useRef<L.Circle | null>(null);
+    const hasLocationRef = useRef(false);
     const [location, setLocation] = useState<SpoonsLocation | null>(null);
     const [locationError, setLocationError] = useState<string | null>(null);
     const [boundaryGeoJson, setBoundaryGeoJson] =
@@ -341,6 +342,7 @@ const SpoonsLocationStatus = () => {
         }
 
         const updateLocation = (position: GeolocationPosition) => {
+            hasLocationRef.current = true;
             setLocation({
                 latitude: position.coords.latitude,
                 longitude: position.coords.longitude,
@@ -375,8 +377,18 @@ const SpoonsLocationStatus = () => {
             highAccuracyLocationOptions,
         );
 
+        navigator.geolocation.getCurrentPosition(
+            updateLocation,
+            (error) => {
+                if (hasLocationRef.current) return;
+                setLocationError(getLocationErrorMessage(error));
+            },
+            fallbackLocationOptions,
+        );
+
         return () => {
             navigator.geolocation.clearWatch(watchId);
+            hasLocationRef.current = false;
             playerLocation.set(null);
         };
     }, [gpsRetryCount]);
