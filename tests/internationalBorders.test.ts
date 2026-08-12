@@ -1,7 +1,7 @@
 import * as turf from "@turf/turf";
 import { describe, expect, it } from "vitest";
 
-import { relevantInternationalBorders } from "@/maps/international-borders";
+import { relevantDistanceLines } from "@/maps/distance-lines";
 
 describe("international-border calculations", () => {
     it("combines nearby border segments and excludes distant borders", () => {
@@ -9,6 +9,7 @@ describe("international-border calculations", () => {
         const borders = [
             turf.lineString([
                 [0.5, -1],
+                [0.5, 0],
                 [0.5, 0],
             ]),
             turf.lineString([
@@ -21,11 +22,7 @@ describe("international-border calculations", () => {
             ]),
         ];
 
-        const relevant = relevantInternationalBorders(
-            borders,
-            [0, 0],
-            playableArea,
-        );
+        const relevant = relevantDistanceLines(borders, [0, 0], playableArea);
 
         expect(relevant).toHaveLength(1);
         expect(relevant[0].geometry.type).toBe("MultiLineString");

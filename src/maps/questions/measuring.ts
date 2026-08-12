@@ -22,13 +22,13 @@ import {
     nearestToQuestion,
     prettifyLocation,
 } from "@/maps/api";
+import { relevantDistanceLines } from "@/maps/distance-lines";
 import {
     arcBufferToPoint,
     holedMask,
     modifyMapData,
     safeUnion,
 } from "@/maps/geo-utils";
-import { relevantInternationalBorders } from "@/maps/international-borders";
 import {
     qualifiesAsHighSpeedRail,
     qualifiesAsHighSpeedTrainService,
@@ -515,11 +515,12 @@ export const determineMeasuringBoundary = async (
                 question.lng,
             );
         }
-        case "council-border":
         case "ward-border": {
-            const boundaries = await loadAdminBoundaries(
-                question.type === "council-border" ? 8 : 10,
-            );
+            const boundaries = await loadAdminBoundaries(10);
+            return featureLines(boundaries);
+        }
+        case "council-border": {
+            const boundaries = await loadAdminBoundaries(8);
             const point = turf.point([question.lng, question.lat]);
             const containing = boundaries.find((boundary) =>
                 turf.booleanPointInPolygon(point, boundary),
@@ -720,8 +721,9 @@ const bufferedDeterminer = _.memoize(
         if (placeData === false || placeData === undefined) return false;
 
         const bufferFeatures =
-            question.type === "international-border"
-                ? relevantInternationalBorders(
+            question.type === "international-border" ||
+            question.type === "ward-border"
+                ? relevantDistanceLines(
                       placeData as Feature[],
                       [question.lng, question.lat],
                       mapGeoJSON.get()!,
