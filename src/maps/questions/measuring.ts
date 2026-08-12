@@ -28,6 +28,7 @@ import {
     modifyMapData,
     safeUnion,
 } from "@/maps/geo-utils";
+import { relevantInternationalBorders } from "@/maps/international-borders";
 import {
     qualifiesAsHighSpeedRail,
     qualifiesAsHighSpeedTrainService,
@@ -57,6 +58,33 @@ const featureLines = (features: Feature[]) =>
         }
         return [feature];
     });
+
+const UK_NATION_RELATION_IDS = {
+    England: 58447,
+    Scotland: 58446,
+    Wales: 58437,
+} as const;
+
+const sharedRelationWayIds = (
+    elements: any[],
+    firstRelationId: number,
+    secondRelationId: number,
+) => {
+    const wayIds = (relationId: number) =>
+        new Set<number>(
+            (
+                elements.find(
+                    (element) =>
+                        element.type === "relation" &&
+                        element.id === relationId,
+                )?.members ?? []
+            )
+                .filter((member: any) => member.type === "way")
+                .map((member: any) => member.ref),
+        );
+    const first = wayIds(firstRelationId);
+    return new Set([...wayIds(secondRelationId)].filter((id) => first.has(id)));
+};
 
 const findLiveHighSpeedRailLines = async () => {
     const mapData = mapGeoJSON.get();
@@ -297,16 +325,60 @@ const findInternationalBorderFeatures = async (lat: number, lng: number) => {
         const data = await getOverpassData(
             `
 [out:json][timeout:60];
+relation(id:${Object.values(UK_NATION_RELATION_IDS).join(",")});
+out body;
 (
   way["boundary"="administrative"]["admin_level"="2"](around:${radius}, ${lat}, ${lng});
+  way(r:${UK_NATION_RELATION_IDS.England})(around:${radius}, ${lat}, ${lng});
+  way(r:${UK_NATION_RELATION_IDS.Scotland})(around:${radius}, ${lat}, ${lng});
+  way(r:${UK_NATION_RELATION_IDS.Wales})(around:${radius}, ${lat}, ${lng});
 );
 out geom;
 `,
             "Finding international borders...",
         );
-        const features = osmtogeojson(data).features as Feature[];
+        const elements = data.elements ?? [];
+        const englandScotland = sharedRelationWayIds(
+            elements,
+            UK_NATION_RELATION_IDS.England,
+            UK_NATION_RELATION_IDS.Scotland,
+        );
+        const englandWales = sharedRelationWayIds(
+            elements,
+            UK_NATION_RELATION_IDS.England,
+            UK_NATION_RELATION_IDS.Wales,
+        );
+        const features = elements
+            .filter(
+                (element: any) =>
+                    element.type === "way" &&
+                    Array.isArray(element.geometry) &&
+                    element.geometry.length >= 2 &&
+                    element.tags?.maritime !== "yes" &&
+                    (element.tags?.admin_level === "2" ||
+                        englandScotland.has(element.id) ||
+                        englandWales.has(element.id)),
+            )
+            .map((element: any) =>
+                turf.lineString(
+                    element.geometry.map(({ lon, lat }: any) => [lon, lat]),
+                    {
+                        ...element.tags,
+                        name: englandScotland.has(element.id)
+                            ? "England - Scotland"
+                            : englandWales.has(element.id)
+                              ? "England - Wales"
+                              : (element.tags?.["name:en"] ??
+                                element.tags?.name),
+                        osmId: `way/${element.id}`,
+                        ukNationBorder:
+                            englandScotland.has(element.id) ||
+                            englandWales.has(element.id),
+                    },
+                ),
+            );
         if (features.length > 0) {
-            return featureLines(features);
+            return features;
         }
     }
 
@@ -647,8 +719,17 @@ const bufferedDeterminer = _.memoize(
 
         if (placeData === false || placeData === undefined) return false;
 
+        const bufferFeatures =
+            question.type === "international-border"
+                ? relevantInternationalBorders(
+                      placeData as Feature[],
+                      [question.lng, question.lat],
+                      mapGeoJSON.get()!,
+                  )
+                : placeData;
+
         return arcBufferToPoint(
-            turf.featureCollection(placeData as any),
+            turf.featureCollection(bufferFeatures as any),
             question.lat,
             question.lng,
         );

@@ -22,9 +22,18 @@ const HIGH_SPEED_TRAIN_OPERATORS = [
     "lumo",
     "london north eastern railway",
 ];
+const INTERNATIONAL_BORDER_RADIUS_METERS = 400000;
+const UK_NATION_RELATION_IDS = {
+    England: 58447,
+    Scotland: 58446,
+    Wales: 58437,
+};
 const elevationOnly = process.argv.includes("--elevation-only");
 const osmOnly = process.argv.includes("--osm-only");
 const transitOnly = process.argv.includes("--transit-only");
+const internationalBorderOnly = process.argv.includes(
+    "--international-border-only",
+);
 
 const root = process.cwd();
 const dataDir = path.join(root, "public", "data");
@@ -185,6 +194,100 @@ const writeGeoJson = async (filePath, features) => {
         `  ${path.relative(root, filePath)}: ${features.length} features`,
     );
 };
+
+const fetchOsmRelation = async (id) => {
+    const response = await fetch(
+        `https://api.openstreetmap.org/api/0.6/relation/${id}.json`,
+        {
+            headers: { "User-Agent": "SpoonsHideAndSeek/1.0" },
+            signal: AbortSignal.timeout(30000),
+        },
+    );
+    if (!response.ok) {
+        throw new Error(`OpenStreetMap relation ${id}: ${response.status}`);
+    }
+    const data = await response.json();
+    return data.elements.find(
+        (element) => element.type === "relation" && element.id === id,
+    );
+};
+
+const generateUkNationBorders = async () => {
+    const relations = new Map(
+        await Promise.all(
+            Object.entries(UK_NATION_RELATION_IDS).map(async ([name, id]) => [
+                name,
+                await fetchOsmRelation(id),
+            ]),
+        ),
+    );
+    const wayIdsByNation = new Map(
+        [...relations.entries()].map(([name, relation]) => [
+            name,
+            new Set(
+                (relation?.members ?? [])
+                    .filter((member) => member.type === "way")
+                    .map((member) => member.ref),
+            ),
+        ]),
+    );
+    const englandWayIds = wayIdsByNation.get("England");
+    const borderNamesByWayId = new Map();
+    for (const otherNation of ["Scotland", "Wales"]) {
+        for (const wayId of wayIdsByNation.get(otherNation)) {
+            if (englandWayIds.has(wayId)) {
+                borderNamesByWayId.set(wayId, `England - ${otherNation}`);
+            }
+        }
+    }
+
+    const nationBorderData = await fetchOverpass(
+        "UK nation land borders",
+        `[out:json][timeout:120];way(id:${[...borderNamesByWayId.keys()].join(",")});out geom tags;`,
+    );
+    return nationBorderData.elements
+        .filter(
+            (element) =>
+                element.type === "way" &&
+                Array.isArray(element.geometry) &&
+                element.geometry.length >= 2 &&
+                element.tags?.maritime !== "yes" &&
+                borderNamesByWayId.has(element.id),
+        )
+        .map((element) =>
+            turf.lineString(
+                element.geometry.map(({ lon, lat }) => [lon, lat]),
+                {
+                    ...element.tags,
+                    name: borderNamesByWayId.get(element.id),
+                    osmId: `way/${element.id}`,
+                    ukNationBorder: true,
+                },
+            ),
+        );
+};
+
+const generateInternationalBorders = async () => {
+    console.log("Fetching static land international-border data...");
+    const internationalBorderData = await fetchOverpass(
+        "land international borders",
+        `[out:json][timeout:240];way["boundary"="administrative"]["admin_level"="2"](around:${INTERNATIONAL_BORDER_RADIUS_METERS},${center[1]},${center[0]});out geom tags;`,
+    );
+    const internationalBorders = lineFeatures(
+        osmtogeojson(internationalBorderData).features,
+    ).filter((feature) => feature.properties?.maritime !== "yes");
+    internationalBorders.push(...(await generateUkNationBorders()));
+    await writeGeoJson(
+        path.join(measuringDir, "international-borders.geojson"),
+        internationalBorders,
+    );
+};
+
+if (internationalBorderOnly) {
+    await generateInternationalBorders();
+    console.log("Static land international-border generation complete.");
+    process.exit(0);
+}
 
 if (!elevationOnly) {
     if (!transitOnly) {
@@ -505,18 +608,7 @@ out body geom;`,
         process.exit(0);
     }
 
-    console.log("Fetching static international-border data...");
-    const internationalBorderData = await fetchOverpass(
-        "international borders",
-        `[out:json][timeout:240];way["boundary"="administrative"]["admin_level"="2"](around:600000,${center[1]},${center[0]});out geom tags;`,
-    );
-    const internationalBorders = lineFeatures(
-        osmtogeojson(internationalBorderData).features,
-    );
-    await writeGeoJson(
-        path.join(measuringDir, "international-borders.geojson"),
-        internationalBorders,
-    );
+    await generateInternationalBorders();
 
     console.log("Fetching static body-of-water geometry...");
     const waterData = await fetchOverpass(
