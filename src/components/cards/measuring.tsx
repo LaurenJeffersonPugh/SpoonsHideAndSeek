@@ -29,6 +29,7 @@ import {
     railStationTargetFromFeature,
 } from "@/maps/questions/measuring";
 import { type MeasuringQuestion } from "@/maps/schema";
+import { SEA_LEVEL_QUESTION } from "@/maps/sea-level";
 
 import { QuestionCard } from "./base";
 
@@ -296,6 +297,11 @@ export const MeasuringQuestionComponent = ({
                     disabled={!data.drag || $isLoading}
                 />
             </SidebarMenuItem>
+            {data.type === "sea-level" && (
+                <p className="px-2 text-sm text-muted-foreground">
+                    {SEA_LEVEL_QUESTION}
+                </p>
+            )}
             {questionSpecific}
             {data.type === "rail-measure" && (
                 <RailStationTargetSelect
@@ -339,10 +345,14 @@ export const MeasuringQuestionComponent = ({
                     disabled={!!$hiderMode || !data.drag || $isLoading}
                 >
                     <ToggleGroupItem value="further">
-                        Hider Further
+                        {data.type === "sea-level"
+                            ? "Further from Sea Level"
+                            : "Hider Further"}
                     </ToggleGroupItem>
                     <ToggleGroupItem value="closer">
-                        Hider Closer
+                        {data.type === "sea-level"
+                            ? "Closer to Sea Level"
+                            : "Hider Closer"}
                     </ToggleGroupItem>
                 </ToggleGroup>
             </div>

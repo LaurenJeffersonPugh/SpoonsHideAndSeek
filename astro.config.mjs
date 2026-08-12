@@ -43,7 +43,7 @@ export default defineConfig({
                 // exports (not used at runtime). Bump the size cap so large
                 // bundled chunks (e.g. arcgis) are cached too.
                 globPatterns: [
-                    "**/*.{js,css,html,ico,png,svg,woff,woff2,geojson}",
+                    "**/*.{js,css,html,ico,png,svg,woff,woff2,geojson,json,bin}",
                 ],
                 globIgnores: ["**/google-map-export*"],
                 maximumFileSizeToCacheInBytes: 30 * 1024 * 1024,

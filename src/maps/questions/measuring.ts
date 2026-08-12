@@ -38,6 +38,12 @@ import type {
     HomeGameMeasuringQuestions,
     MeasuringQuestion,
 } from "@/maps/schema";
+import { isCloserToSeaLevel } from "@/maps/sea-level";
+import {
+    loadTerrainGrid,
+    terrainCloserToSeaLevelPolygon,
+    terrainElevationMeters,
+} from "@/maps/terrain";
 
 const osmTagForLocation = (location: APILocations) => {
     if (location === "amusement_park") {
@@ -305,21 +311,6 @@ const loadElevationSamples = _.memoize(
         staticMeasuringFeatures("elevation-grid") as Promise<Feature<Point>[]>,
 );
 
-const staticElevationMeters = async (lat: number, lng: number) => {
-    try {
-        const samples = await loadElevationSamples();
-        if (samples.length === 0) return null;
-        const nearest = turf.nearestPoint(
-            turf.point([lng, lat]),
-            turf.featureCollection(samples),
-        );
-        const elevation = nearest.properties?.elevation;
-        return typeof elevation === "number" ? elevation : null;
-    } catch {
-        return null;
-    }
-};
-
 const findInternationalBorderFeatures = async (lat: number, lng: number) => {
     for (const radius of [25000, 50000, 100000, 250000, 500000]) {
         const data = await getOverpassData(
@@ -387,8 +378,16 @@ out geom;
 };
 
 const fetchElevationMeters = async (lat: number, lng: number) => {
-    const staticElevation = await staticElevationMeters(lat, lng);
-    if (staticElevation !== null) return staticElevation;
+    try {
+        const staticElevation = terrainElevationMeters(
+            await loadTerrainGrid(),
+            lat,
+            lng,
+        );
+        if (staticElevation !== null) return staticElevation;
+    } catch {
+        // Fall through to the online elevation lookup.
+    }
 
     const response = await fetch(
         `https://api.open-meteo.com/v1/elevation?latitude=${lat}&longitude=${lng}`,
@@ -405,57 +404,87 @@ const fetchElevationMeters = async (lat: number, lng: number) => {
     return typeof elevation === "number" ? elevation : null;
 };
 
+const legacySeaLevelBoundary = async (
+    calculationBbox: [number, number, number, number],
+    seekerElevation: number,
+) => {
+    let samples: Feature<Point>[];
+    try {
+        samples = await loadElevationSamples();
+    } catch {
+        return false;
+    }
+    if (samples.length === 0) return false;
+
+    const relevantSamples = turf.featureCollection(
+        samples.filter((sample) => {
+            const [longitude, latitude] = sample.geometry.coordinates;
+            return (
+                longitude >= calculationBbox[0] &&
+                longitude <= calculationBbox[2] &&
+                latitude >= calculationBbox[1] &&
+                latitude <= calculationBbox[3]
+            );
+        }),
+    );
+    if (relevantSamples.features.length === 0) return false;
+
+    const voronoi = turf.voronoi(relevantSamples, {
+        bbox: calculationBbox,
+    });
+    const closerToSeaLevel = voronoi.features.filter((feature) => {
+        const elevation = feature.properties?.elevation;
+        return (
+            typeof elevation === "number" &&
+            Math.abs(elevation) <= Math.abs(seekerElevation)
+        );
+    }) as Feature<Polygon>[];
+    if (closerToSeaLevel.length === 0) return false;
+
+    return turf.simplify(safeUnion(turf.featureCollection(closerToSeaLevel)), {
+        tolerance: 0.0001,
+        highQuality: true,
+    });
+};
+
 const determineSeaLevelBoundary = _.memoize(
     async (question: MeasuringQuestion) => {
-        let samples: Feature<Point>[];
+        const mapData = mapGeoJSON.get();
+        if (mapData === null) return false;
+        const calculationBbox = turf.bbox(
+            turf.buffer(turf.bboxPolygon(turf.bbox(mapData)), 3, {
+                units: "kilometers",
+            })!,
+        ) as [number, number, number, number];
+
         try {
-            samples = await loadElevationSamples();
+            const terrain = await loadTerrainGrid();
+            const seekerElevation =
+                terrainElevationMeters(terrain, question.lat, question.lng) ??
+                (await fetchElevationMeters(question.lat, question.lng));
+            if (seekerElevation !== null) {
+                const boundary = terrainCloserToSeaLevelPolygon(
+                    terrain,
+                    calculationBbox,
+                    seekerElevation,
+                );
+                if (boundary) {
+                    return turf.simplify(boundary, {
+                        tolerance: 0.0001,
+                        highQuality: true,
+                    });
+                }
+            }
         } catch {
-            return false;
+            // Fall through to the older static sample grid.
         }
-        if (samples.length === 0 || mapGeoJSON.get() === null) return false;
 
         const seekerElevation = await fetchElevationMeters(
             question.lat,
             question.lng,
         );
         if (seekerElevation === null) return false;
-
-        const mapBbox = turf.bbox(mapGeoJSON.get()!);
-        const calculationBbox = turf.bbox(
-            turf.buffer(turf.bboxPolygon(mapBbox), 3, {
-                units: "kilometers",
-            })!,
-        ) as [number, number, number, number];
-        const relevantSamples = turf.featureCollection(
-            samples.filter((sample) => {
-                const [longitude, latitude] = sample.geometry.coordinates;
-                return (
-                    longitude >= calculationBbox[0] &&
-                    longitude <= calculationBbox[2] &&
-                    latitude >= calculationBbox[1] &&
-                    latitude <= calculationBbox[3]
-                );
-            }),
-        );
-        if (relevantSamples.features.length === 0) return false;
-
-        const voronoi = turf.voronoi(relevantSamples, {
-            bbox: calculationBbox,
-        });
-        const closerToSeaLevel = voronoi.features.filter((feature) => {
-            const elevation = feature.properties?.elevation;
-            return (
-                typeof elevation === "number" &&
-                Math.abs(elevation) <= Math.abs(seekerElevation)
-            );
-        }) as Feature<Polygon>[];
-        if (closerToSeaLevel.length === 0) return false;
-
-        return turf.simplify(
-            safeUnion(turf.featureCollection(closerToSeaLevel)),
-            { tolerance: 0.0001, highQuality: true },
-        );
+        return legacySeaLevelBoundary(calculationBbox, seekerElevation);
     },
     (question) => `${question.lat},${question.lng}`,
 );
@@ -842,8 +871,10 @@ export const hiderifyMeasuring = async (
             );
 
             if (seekerElevation !== null && hiderElevation !== null) {
-                question.hiderCloser =
-                    Math.abs(hiderElevation) < Math.abs(seekerElevation);
+                question.hiderCloser = isCloserToSeaLevel(
+                    hiderElevation,
+                    seekerElevation,
+                );
             }
         } catch {
             toast.error("Could not look up elevation for sea level question.");

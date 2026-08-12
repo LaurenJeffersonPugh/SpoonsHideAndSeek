@@ -52,7 +52,8 @@ export const MapAttribution = () => {
                     >
                         Thunderforest
                     </a>{" "}
-                    &middot; Turf.js
+                    &middot; Contains OS data &copy; Crown copyright and
+                    database right 2026 &middot; Turf.js
                 </div>
             )}
             <button

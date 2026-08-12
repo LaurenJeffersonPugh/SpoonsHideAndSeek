@@ -25,6 +25,7 @@ import type {
     TentacleQuestion,
     ThermometerQuestion,
 } from "@/maps/schema";
+import { SEA_LEVEL_QUESTION } from "@/maps/sea-level";
 
 type QuestionType =
     | "radius"
@@ -481,6 +482,10 @@ export const HiderSidebar = () => {
                     result = q.hiderCloser
                         ? `You are CLOSER to ${stationName} than the seeker.`
                         : `You are FURTHER from ${stationName} than the seeker.`;
+                } else if (q.type === "sea-level") {
+                    result = q.hiderCloser
+                        ? "You are CLOSER to sea level than the seeker."
+                        : "You are FURTHER from sea level than the seeker.";
                 } else {
                     result = q.hiderCloser
                         ? `You are CLOSER to a ${categoryLabel(category)} than the seeker.`
@@ -822,6 +827,12 @@ export const HiderSidebar = () => {
                                 ))}
                             </select>
                         </label>
+                    )}
+
+                    {type === "measuring" && category === "sea-level" && (
+                        <p className="text-sm text-white/80">
+                            {SEA_LEVEL_QUESTION}
+                        </p>
                     )}
 
                     {type === "measuring" && category === "rail-measure" && (
