@@ -443,9 +443,19 @@ export const HiderSidebar = () => {
                     } as unknown as MatchingQuestion,
                     hiderLoc,
                 );
-                result = q.same
-                    ? `SAME — your nearest ${categoryLabel(category)} is the seeker's.`
-                    : `DIFFERENT — your nearest ${categoryLabel(category)} is not the seeker's.`;
+                if (
+                    q.type === "street-path" &&
+                    q.hiderStreetPathName &&
+                    q.seekerStreetPathName
+                ) {
+                    result = q.same
+                        ? `SAME — your nearest street or path is ${q.hiderStreetPathName}. The seeker's is also ${q.seekerStreetPathName}.`
+                        : `DIFFERENT — your nearest street or path is ${q.hiderStreetPathName}. The seeker's is ${q.seekerStreetPathName}.`;
+                } else {
+                    result = q.same
+                        ? `SAME — your nearest ${categoryLabel(category)} is the seeker's.`
+                        : `DIFFERENT — your nearest ${categoryLabel(category)} is not the seeker's.`;
+                }
             }
 
             setAnswer(result);

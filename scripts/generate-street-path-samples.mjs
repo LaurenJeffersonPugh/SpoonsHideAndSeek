@@ -10,7 +10,7 @@ const OVERPASS_ENDPOINTS = [
     "https://overpass.private.coffee/api/interpreter",
 ];
 
-const SAMPLE_INTERVAL_METERS = 150;
+const SAMPLE_INTERVAL_METERS = 40;
 const BUFFER_MILES = 1;
 
 const root = process.cwd();
@@ -20,6 +20,12 @@ const outputPath = path.join(
     "public",
     "data",
     "street-path-samples.geojson",
+);
+const outputLinesPath = path.join(
+    root,
+    "public",
+    "data",
+    "street-path-lines.geojson",
 );
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -82,18 +88,41 @@ console.log("Fetching named street/path geometry from Overpass...");
 const data = await fetchOverpass(query);
 
 const features = [];
+const lineFeatures = [];
 const seen = new Set();
+const rawLines = [];
 
-const addSample = (name, coordinates) => {
-    const point = turf.point(coordinates, { name });
+const roundCoordinates = (coordinates) =>
+    coordinates.map((coordinate) => Number(coordinate.toFixed(6)));
+
+const coordinateKey = (coordinates) =>
+    coordinates.map((coordinate) => coordinate.toFixed(5)).join(",");
+
+const addSample = (name, streetPathId, coordinates) => {
+    const point = turf.point(roundCoordinates(coordinates), {
+        name,
+        streetPathId,
+    });
     if (!turf.booleanPointInPolygon(point, clipRegion)) return;
 
-    const key = `${name}:${coordinates
-        .map((coordinate) => coordinate.toFixed(5))
-        .join(",")}`;
+    const key = `${streetPathId}:${coordinateKey(coordinates)}`;
     if (seen.has(key)) return;
     seen.add(key);
     features.push(point);
+};
+
+const find = (parents, index) => {
+    while (parents[index] !== index) {
+        parents[index] = parents[parents[index]];
+        index = parents[index];
+    }
+    return index;
+};
+
+const union = (parents, a, b) => {
+    const rootA = find(parents, a);
+    const rootB = find(parents, b);
+    if (rootA !== rootB) parents[rootB] = rootA;
 };
 
 for (const element of data.elements ?? []) {
@@ -101,7 +130,9 @@ for (const element of data.elements ?? []) {
     if (!name || !Array.isArray(element.geometry)) continue;
 
     const coordinates = element.geometry
-        .map((coordinate) => [coordinate.lon, coordinate.lat])
+        .map((coordinate) =>
+            roundCoordinates([coordinate.lon, coordinate.lat]),
+        )
         .filter(
             (coordinate) =>
                 typeof coordinate[0] === "number" &&
@@ -110,23 +141,79 @@ for (const element of data.elements ?? []) {
     if (coordinates.length < 2) continue;
 
     const line = turf.lineString(coordinates, { name });
-    const lengthMeters = turf.length(line, { units: "meters" });
-    if (!Number.isFinite(lengthMeters) || lengthMeters <= 0) continue;
+    if (!turf.booleanIntersects(line, clipRegion)) continue;
 
-    for (
-        let distance = 0;
-        distance < lengthMeters;
-        distance += SAMPLE_INTERVAL_METERS
-    ) {
+    rawLines.push({
+        name,
+        osmId: element.id,
+        coordinates,
+    });
+}
+
+const groupedByName = new Map();
+for (const line of rawLines) {
+    const lines = groupedByName.get(line.name) ?? [];
+    lines.push(line);
+    groupedByName.set(line.name, lines);
+}
+
+for (const [name, lines] of groupedByName) {
+    const parents = lines.map((_, index) => index);
+    const coordinateToLines = new Map();
+
+    lines.forEach((line, index) => {
+        for (const coordinates of line.coordinates) {
+            const key = coordinateKey(coordinates);
+            const connected = coordinateToLines.get(key);
+            if (connected !== undefined) {
+                union(parents, index, connected);
+            } else {
+                coordinateToLines.set(key, index);
+            }
+        }
+    });
+
+    const componentNumbers = new Map();
+
+    for (const [index, rawLine] of lines.entries()) {
+        const rootIndex = find(parents, index);
+        if (!componentNumbers.has(rootIndex)) {
+            componentNumbers.set(rootIndex, componentNumbers.size + 1);
+        }
+        const streetPathId = `${name}#${componentNumbers.get(rootIndex)}`;
+        const line = turf.lineString(rawLine.coordinates, {
+            name,
+            osmId: rawLine.osmId,
+            streetPathId,
+        });
+
+        lineFeatures.push(
+            turf.lineString(rawLine.coordinates, line.properties),
+        );
+
+        const lengthMeters = turf.length(line, { units: "meters" });
+        if (!Number.isFinite(lengthMeters) || lengthMeters <= 0) continue;
+
+        for (
+            let distance = 0;
+            distance < lengthMeters;
+            distance += SAMPLE_INTERVAL_METERS
+        ) {
+            addSample(
+                name,
+                streetPathId,
+                turf.along(line, distance, {
+                    units: "meters",
+                }).geometry.coordinates,
+            );
+        }
+
         addSample(
             name,
-            turf.along(line, distance, {
-                units: "meters",
-            }).geometry.coordinates,
+            streetPathId,
+            rawLine.coordinates[rawLine.coordinates.length - 1],
         );
     }
-
-    addSample(name, coordinates[coordinates.length - 1]);
 }
 
 await fs.writeFile(
@@ -136,10 +223,23 @@ await fs.writeFile(
         features,
     })}\n`,
 );
+await fs.writeFile(
+    outputLinesPath,
+    `${JSON.stringify({
+        type: "FeatureCollection",
+        features: lineFeatures,
+    })}\n`,
+);
 
 console.log(
     `Done. Wrote ${features.length} street/path sample points to ${path.relative(
         root,
         outputPath,
+    )}.`,
+);
+console.log(
+    `Wrote ${lineFeatures.length} street/path lines to ${path.relative(
+        root,
+        outputLinesPath,
     )}.`,
 );

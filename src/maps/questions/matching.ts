@@ -2,6 +2,8 @@ import * as turf from "@turf/turf";
 import type {
     Feature,
     FeatureCollection,
+    LineString,
+    MultiLineString,
     MultiPolygon,
     Point,
     Polygon,
@@ -21,6 +23,7 @@ import {
     getOverpassData,
     loadAdminBoundaries,
     loadPregeneratedPois,
+    loadStreetPathLines,
     loadStreetPathSamples,
     LOCATION_FIRST_TAG,
     nearestToQuestion,
@@ -75,7 +78,154 @@ out center tags;
     return null;
 };
 
-const STREET_PATH_SAMPLE_INTERVAL_METERS = 150;
+const STREET_PATH_SAMPLE_INTERVAL_METERS = 40;
+const STREET_PATH_BOUNDARY_SAMPLE_INTERVAL_METERS = 10;
+const STREET_PATH_BOUNDARY_MARGIN_METERS = 3000;
+const STREET_PATH_BOUNDARY_JOIN_METERS = 8;
+const STREET_PATH_BOUNDARY_SIMPLIFY_DEGREES = 0.00002;
+
+const smoothStreetPathBoundary = (
+    boundary: Feature<Polygon | MultiPolygon>,
+) => {
+    const expanded = turf.buffer(boundary, STREET_PATH_BOUNDARY_JOIN_METERS, {
+        units: "meters",
+        steps: 8,
+    });
+    if (!expanded) return boundary;
+
+    const closed = turf.buffer(expanded, -STREET_PATH_BOUNDARY_JOIN_METERS, {
+        units: "meters",
+        steps: 8,
+    });
+    if (!closed) return boundary;
+
+    return turf.simplify(closed, {
+        tolerance: STREET_PATH_BOUNDARY_SIMPLIFY_DEGREES,
+        highQuality: true,
+    });
+};
+
+const denseSamplesNearStreetPath = (
+    allLines: FeatureCollection<LineString>,
+    streetPathLines: Feature<LineString>[],
+    streetPathId: string,
+    streetPathName: string,
+) => {
+    const [west, south, east, north] = turf.bbox(
+        turf.featureCollection(streetPathLines),
+    );
+    const middleLatitude = (south + north) / 2;
+    const latitudeMargin = STREET_PATH_BOUNDARY_MARGIN_METERS / 111_320;
+    const longitudeMargin =
+        STREET_PATH_BOUNDARY_MARGIN_METERS /
+        (111_320 *
+            Math.max(Math.cos(turf.degreesToRadians(middleLatitude)), 0.1));
+
+    const calculationBbox: [number, number, number, number] = [
+        west - longitudeMargin,
+        south - latitudeMargin,
+        east + longitudeMargin,
+        north + latitudeMargin,
+    ];
+
+    const samplesByCoordinate = new Map<string, Feature<Point>>();
+    const addSample = (
+        coordinates: [number, number],
+        properties: Record<string, unknown>,
+        isSelectedStreetPath: boolean,
+    ) => {
+        const normalizedCoordinates: [number, number] = [
+            Math.min(
+                calculationBbox[2],
+                Math.max(calculationBbox[0], Number(coordinates[0].toFixed(5))),
+            ),
+            Math.min(
+                calculationBbox[3],
+                Math.max(calculationBbox[1], Number(coordinates[1].toFixed(5))),
+            ),
+        ];
+        const coordinateKey = normalizedCoordinates.join(",");
+        if (!samplesByCoordinate.has(coordinateKey) || isSelectedStreetPath) {
+            samplesByCoordinate.set(
+                coordinateKey,
+                turf.point(normalizedCoordinates, properties),
+            );
+        }
+    };
+
+    const sampleLine = (
+        coordinates: [number, number][],
+        properties: Record<string, unknown>,
+        isSelectedStreetPath: boolean,
+    ) => {
+        if (coordinates.length < 2) return;
+        const line = turf.lineString(coordinates, properties);
+        const lengthMeters = turf.length(line, { units: "meters" });
+        if (!Number.isFinite(lengthMeters) || lengthMeters <= 0) return;
+
+        for (
+            let distance = 0;
+            distance < lengthMeters;
+            distance += STREET_PATH_BOUNDARY_SAMPLE_INTERVAL_METERS
+        ) {
+            addSample(
+                turf.along(line, distance, { units: "meters" }).geometry
+                    .coordinates as [number, number],
+                properties,
+                isSelectedStreetPath,
+            );
+        }
+        addSample(
+            coordinates[coordinates.length - 1],
+            properties,
+            isSelectedStreetPath,
+        );
+    };
+
+    const linesInCalculationArea = allLines.features.filter((feature) => {
+        const [lineWest, lineSouth, lineEast, lineNorth] = turf.bbox(feature);
+        return (
+            lineEast >= calculationBbox[0] &&
+            lineWest <= calculationBbox[2] &&
+            lineNorth >= calculationBbox[1] &&
+            lineSouth <= calculationBbox[3]
+        );
+    });
+
+    // Add the selected component last so shared junction samples belong to it.
+    linesInCalculationArea.sort(
+        (featureA, featureB) =>
+            Number(featureA.properties?.streetPathId === streetPathId) -
+            Number(featureB.properties?.streetPathId === streetPathId),
+    );
+
+    for (const feature of linesInCalculationArea) {
+        const clipped = turf.bboxClip(feature, calculationBbox) as Feature<
+            LineString | MultiLineString
+        >;
+        const lineParts =
+            clipped.geometry.type === "LineString"
+                ? [clipped.geometry.coordinates]
+                : clipped.geometry.coordinates;
+        const properties = feature.properties ?? {};
+        const isSelectedStreetPath = properties.streetPathId
+            ? properties.streetPathId === streetPathId
+            : properties.name === streetPathName;
+
+        for (const coordinates of lineParts) {
+            sampleLine(
+                coordinates as [number, number][],
+                properties,
+                isSelectedStreetPath,
+            );
+        }
+    }
+
+    return {
+        calculationBbox,
+        samples: turf.featureCollection([...samplesByCoordinate.values()]),
+    };
+};
 
 const findStreetOrPathSamplePointsInZone = _.memoize(
     async () => {
@@ -163,9 +313,16 @@ const nearestStreetOrPathNameInZone = async (lat: number, lng: number) => {
     }
 
     return turf.nearestPoint(turf.point([lng, lat]), streetPathSamples)
-        .properties
-        .name as string;
+        .properties.name as string;
 };
+
+const findStreetOrPathLinesInZone = _.memoize(async () => {
+    try {
+        return turf.featureCollection(await loadStreetPathLines());
+    } catch {
+        return turf.featureCollection<LineString>([]);
+    }
+});
 
 export const findMatchingPlaces = async (question: MatchingQuestion) => {
     switch (question.type) {
@@ -263,17 +420,54 @@ export const determineMatchingBoundary = _.memoize(
                 const streetPathSamples =
                     await findStreetOrPathSamplePointsInZone();
                 if (streetPathSamples.features.length === 0) return false;
+                const streetPathLines = await findStreetOrPathLinesInZone();
+                if (streetPathLines.features.length === 0) return false;
 
-                const nearestName = turf.nearestPoint(
+                const nearestSample = turf.nearestPoint(
                     turf.point([question.lng, question.lat]),
                     streetPathSamples,
-                ).properties.name as string;
-                const voronoi = geoSpatialVoronoi(streetPathSamples);
-                const matchingCells = voronoi.features.filter(
+                );
+                const nearestName = nearestSample.properties.name as string;
+                const linesByStreetPath = _.groupBy(
+                    streetPathLines.features.filter(
+                        (feature) => feature.properties?.name === nearestName,
+                    ),
                     (feature) =>
-                        feature.properties?.site?.properties?.name ===
-                        nearestName,
-                ) as Feature<Polygon | MultiPolygon>[];
+                        feature.properties?.streetPathId ?? nearestName,
+                );
+                const matchingCells: Feature<Polygon | MultiPolygon>[] = [];
+
+                for (const [streetPathId, lines] of Object.entries(
+                    linesByStreetPath,
+                )) {
+                    const { calculationBbox, samples: nearbySamples } =
+                        denseSamplesNearStreetPath(
+                            streetPathLines,
+                            lines,
+                            streetPathId,
+                            nearestName,
+                        );
+                    if (nearbySamples.features.length === 0) continue;
+                    const voronoi = turf.voronoi(nearbySamples, {
+                        bbox: calculationBbox,
+                    });
+
+                    const componentCells = voronoi.features.filter(
+                        (feature) => {
+                            return feature.properties?.streetPathId
+                                ? feature.properties.streetPathId ===
+                                      streetPathId
+                                : feature.properties?.name === nearestName;
+                        },
+                    ) as Feature<Polygon | MultiPolygon>[];
+                    if (componentCells.length === 0) continue;
+
+                    matchingCells.push(
+                        smoothStreetPathBoundary(
+                            safeUnion(turf.featureCollection(componentCells)),
+                        ),
+                    );
+                }
 
                 if (matchingCells.length === 0) return false;
 
@@ -457,6 +651,9 @@ export const hiderifyMatching = async (
                 question.lng,
             );
 
+            question.hiderStreetPathName = hiderStreet ?? undefined;
+            question.seekerStreetPathName = seekerStreet ?? undefined;
+
             if (hiderStreet && seekerStreet) {
                 question.same = hiderStreet === seekerStreet;
             }
@@ -558,6 +755,28 @@ export const hiderifyMatching = async (
 
 export const matchingPlanningPolygon = async (question: MatchingQuestion) => {
     try {
+        if (question.type === "street-path") {
+            const streetPathLines = await findStreetOrPathLinesInZone();
+            if (streetPathLines.features.length === 0) {
+                return false;
+            }
+
+            const point = turf.point([question.lng, question.lat]);
+            const nearestLine = _.minBy(streetPathLines.features, (feature) =>
+                turf.pointToLineDistance(point, feature, {
+                    units: "meters",
+                }),
+            );
+            const nearestName = nearestLine?.properties?.name;
+            if (!nearestName) return false;
+
+            return turf.featureCollection(
+                streetPathLines.features.filter(
+                    (feature) => feature.properties?.name === nearestName,
+                ),
+            );
+        }
+
         const boundary = await determineMatchingBoundary(question);
 
         if (boundary === false) {

@@ -2,6 +2,7 @@ import * as turf from "@turf/turf";
 import type {
     Feature,
     FeatureCollection,
+    LineString,
     MultiPolygon,
     Point,
     Polygon,
@@ -143,6 +144,19 @@ export const loadStreetPathSamples = async (): Promise<Feature<Point>[]> => {
         );
     }
     const geo = (await response.json()) as FeatureCollection<Point>;
+    return geo.features;
+};
+
+export const loadStreetPathLines = async (): Promise<Feature<LineString>[]> => {
+    const response = await fetch(
+        `${import.meta.env.BASE_URL.replace(/\/?$/, "/")}data/street-path-lines.geojson`,
+    );
+    if (!response.ok) {
+        throw new Error(
+            `Failed to load pregenerated street/path lines: ${response.status} ${response.statusText}`,
+        );
+    }
+    const geo = (await response.json()) as FeatureCollection<LineString>;
     return geo.features;
 };
 
