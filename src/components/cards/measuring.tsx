@@ -1,5 +1,6 @@
 import { useStore } from "@nanostores/react";
 import { Label } from "@radix-ui/react-label";
+import * as turf from "@turf/turf";
 import * as React from "react";
 
 import CustomInitDialog from "@/components/CustomInitDialog";
@@ -22,10 +23,92 @@ import {
     triggerLocalRefresh,
 } from "@/lib/context";
 import { cn } from "@/lib/utils";
-import { determineMeasuringBoundary } from "@/maps/questions/measuring";
+import {
+    determineMeasuringBoundary,
+    findMeasuringTransitStations,
+    railStationTargetFromFeature,
+} from "@/maps/questions/measuring";
 import { type MeasuringQuestion } from "@/maps/schema";
 
 import { QuestionCard } from "./base";
+
+type RailMeasuringQuestion = Extract<
+    MeasuringQuestion,
+    { type: "rail-measure" }
+>;
+
+const RailStationTargetSelect = ({
+    data,
+    disabled,
+}: {
+    data: RailMeasuringQuestion;
+    disabled: boolean;
+}) => {
+    const [stations, setStations] = React.useState<
+        Awaited<ReturnType<typeof findMeasuringTransitStations>>
+    >([]);
+
+    React.useEffect(() => {
+        let cancelled = false;
+        void findMeasuringTransitStations().then((loaded) => {
+            if (!cancelled) {
+                setStations(
+                    [...loaded].sort((a, b) =>
+                        railStationTargetFromFeature(a).name.localeCompare(
+                            railStationTargetFromFeature(b).name,
+                        ),
+                    ),
+                );
+            }
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    React.useEffect(() => {
+        if (data.targetStation || stations.length === 0) return;
+        const nearest = turf.nearestPoint(
+            turf.point([data.lng, data.lat]),
+            turf.featureCollection(stations),
+        );
+        data.targetStation = railStationTargetFromFeature(nearest);
+        questionModified();
+    }, [data, data.lat, data.lng, data.targetStation, stations]);
+
+    const stationsById = new Map(
+        stations.map((station) => {
+            const target = railStationTargetFromFeature(station);
+            return [target.id, { station, target }];
+        }),
+    );
+
+    return (
+        <SidebarMenuItem className={MENU_ITEM_CLASSNAME}>
+            <div className="flex w-full flex-col gap-1">
+                <Label className="text-sm font-semibold">Target station</Label>
+                <Select
+                    trigger={{ placeholder: "Select a station" }}
+                    options={Object.fromEntries(
+                        [...stationsById].map(([id, { target }]) => [
+                            id,
+                            target.name,
+                        ]),
+                    )}
+                    groups={{}}
+                    value={data.targetStation?.id ?? ""}
+                    onValueChange={(id) => {
+                        const selected = stationsById.get(id);
+                        if (!selected) return;
+                        data.targetStation = selected.target;
+                        questionModified();
+                    }}
+                    disabled={disabled || stations.length === 0}
+                />
+            </div>
+        </SidebarMenuItem>
+    );
+};
 
 export const MeasuringQuestionComponent = ({
     data,
@@ -214,6 +297,12 @@ export const MeasuringQuestionComponent = ({
                 />
             </SidebarMenuItem>
             {questionSpecific}
+            {data.type === "rail-measure" && (
+                <RailStationTargetSelect
+                    data={data}
+                    disabled={!data.drag || $isLoading}
+                />
+            )}
             <LatitudeLongitude
                 latitude={data.lat}
                 longitude={data.lng}

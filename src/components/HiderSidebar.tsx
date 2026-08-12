@@ -9,7 +9,11 @@ import { parseCoordinates } from "@/lib/coordinates";
 import { cn } from "@/lib/utils";
 import { loadAdminBoundaries, loadPregeneratedPois } from "@/maps/api";
 import { hiderifyMatching } from "@/maps/questions/matching";
-import { hiderifyMeasuring } from "@/maps/questions/measuring";
+import {
+    findMeasuringTransitStations,
+    hiderifyMeasuring,
+    railStationTargetFromFeature,
+} from "@/maps/questions/measuring";
 import { hiderifyRadius } from "@/maps/questions/radius";
 import { hiderifyTentacles } from "@/maps/questions/tentacles";
 import { hiderifyThermometer } from "@/maps/questions/thermometer";
@@ -40,9 +44,11 @@ const QUESTION_TYPES: { type: QuestionType; label: string }[] = [
 // Categories usable by tentacle / measuring / matching questions.
 // "theme_park" is repurposed as Greggs (see scripts/generate-spoons-pois.mjs).
 const CATEGORY_OPTIONS = [
+    { value: "same-train-line", label: "Transit Line" },
+    { value: "same-length-station", label: "Station Name Length" },
     { value: "theme_park", label: "Greggs" },
     { value: "hospital", label: "Hospital" },
-    { value: "cinema", label: "Cinema" },
+    { value: "cinema", label: "Movie Theatre" },
     { value: "museum", label: "Museum" },
     { value: "library", label: "Library" },
     { value: "park", label: "Park" },
@@ -50,7 +56,10 @@ const CATEGORY_OPTIONS = [
     { value: "zoo_aquarium", label: "Zoo & Aquarium" },
     { value: "street-path", label: "Street or Path" },
     { value: "airport", label: "Airport" },
-    { value: "highspeed-measure-shinkansen", label: "High-Speed Train Line" },
+    {
+        value: "highspeed-measure-shinkansen",
+        label: "High-Speed Train Line",
+    },
     { value: "rail-measure", label: "Rail Station" },
     { value: "international-border", label: "International Border" },
     { value: "council-border", label: "Local Council Border" },
@@ -66,6 +75,8 @@ const CATEGORY_OPTIONS = [
 const MATCHING_CATEGORY_OPTIONS = CATEGORY_OPTIONS.filter((option) =>
     [
         "street-path",
+        "same-train-line",
+        "same-length-station",
         "park",
         "zoo_aquarium",
         "golf_course",
@@ -158,6 +169,10 @@ export const HiderSidebar = () => {
         "miles",
     );
     const [category, setCategory] = useState(CATEGORY_OPTIONS[0].value);
+    const [railStations, setRailStations] = useState<
+        Awaited<ReturnType<typeof findMeasuringTransitStations>>
+    >([]);
+    const [targetStationId, setTargetStationId] = useState("");
     // Matching can either compare nearest-place ("category") or which
     // administration district you're both in ("council" / "ward").
     const [matchMode, setMatchMode] = useState<"category" | "council" | "ward">(
@@ -216,9 +231,61 @@ export const HiderSidebar = () => {
         return Number.isFinite(n) ? n : 0;
     };
 
+    useEffect(() => {
+        let cancelled = false;
+        void findMeasuringTransitStations().then((stations) => {
+            if (cancelled) return;
+            setRailStations(
+                [...stations].sort((a, b) =>
+                    railStationTargetFromFeature(a).name.localeCompare(
+                        railStationTargetFromFeature(b).name,
+                    ),
+                ),
+            );
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    useEffect(() => {
+        if (
+            type !== "measuring" ||
+            category !== "rail-measure" ||
+            railStations.length === 0 ||
+            railStations.some(
+                (station) =>
+                    railStationTargetFromFeature(station).id ===
+                    targetStationId,
+            )
+        ) {
+            return;
+        }
+
+        const latitude = parseFloat(lat);
+        const longitude = parseFloat(lng);
+        const selected =
+            Number.isFinite(latitude) && Number.isFinite(longitude)
+                ? turf.nearestPoint(
+                      turf.point([longitude, latitude]),
+                      turf.featureCollection(railStations),
+                  )
+                : railStations[0];
+        setTargetStationId(railStationTargetFromFeature(selected).id);
+    }, [category, lat, lng, railStations, targetStationId, type]);
+
+    const targetRailStation = railStations.find(
+        (station) =>
+            railStationTargetFromFeature(station).id === targetStationId,
+    );
+
     const selectType = (next: QuestionType) => {
         setType(next);
         setAnswer(null);
+        if (next === "tentacles") {
+            setRadius("2");
+            setUnit("kilometers");
+        }
     };
 
     // Always show the hider's nearest of the chosen category (distance-based),
@@ -228,7 +295,11 @@ export const HiderSidebar = () => {
             type === "tentacles" ||
             type === "measuring" ||
             (type === "matching" && matchMode === "category");
-        if (!isCategory || !hiderLoc) {
+        if (
+            !isCategory ||
+            !hiderLoc ||
+            (type === "measuring" && category === "rail-measure")
+        ) {
             setNearest(null);
             return;
         }
@@ -398,12 +469,23 @@ export const HiderSidebar = () => {
                         lng: num(lng),
                         type: category,
                         hiderCloser: true,
+                        targetStation: targetRailStation
+                            ? railStationTargetFromFeature(targetRailStation)
+                            : undefined,
                     } as unknown as MeasuringQuestion,
                     hiderLoc,
                 );
-                result = q.hiderCloser
-                    ? `You are CLOSER to a ${categoryLabel(category)} than the seeker.`
-                    : `You are FURTHER from a ${categoryLabel(category)} than the seeker.`;
+                if (q.type === "rail-measure") {
+                    const stationName =
+                        q.targetStation?.name ?? "the selected rail station";
+                    result = q.hiderCloser
+                        ? `You are CLOSER to ${stationName} than the seeker.`
+                        : `You are FURTHER from ${stationName} than the seeker.`;
+                } else {
+                    result = q.hiderCloser
+                        ? `You are CLOSER to a ${categoryLabel(category)} than the seeker.`
+                        : `You are FURTHER from a ${categoryLabel(category)} than the seeker.`;
+                }
             } else if (type === "matching" && matchMode !== "category") {
                 // Administration-district match: are the hider and the seeker's
                 // point in the same council (level 8) or ward (level 10)?
@@ -451,6 +533,20 @@ export const HiderSidebar = () => {
                     result = q.same
                         ? `SAME — your nearest street or path is ${q.hiderStreetPathName}. The seeker's is also ${q.seekerStreetPathName}.`
                         : `DIFFERENT — your nearest street or path is ${q.hiderStreetPathName}. The seeker's is ${q.seekerStreetPathName}.`;
+                } else if (
+                    q.type === "same-train-line" &&
+                    q.hiderStationName &&
+                    q.seekerStationName
+                ) {
+                    result = q.same
+                        ? `SAME — ${q.hiderStationName} and ${q.seekerStationName} share a transit line.`
+                        : `DIFFERENT — ${q.hiderStationName} and ${q.seekerStationName} do not share a transit line.`;
+                } else if (
+                    q.type === "same-length-station" &&
+                    q.hiderStationName &&
+                    q.seekerStationName
+                ) {
+                    result = `${q.lengthComparison?.toUpperCase() ?? "UNKNOWN"} — your nearest station is ${q.hiderStationName}; the seeker's is ${q.seekerStationName}.`;
                 } else {
                     result = q.same
                         ? `SAME — your nearest ${categoryLabel(category)} is the seeker's.`
@@ -728,6 +824,32 @@ export const HiderSidebar = () => {
                         </label>
                     )}
 
+                    {type === "measuring" && category === "rail-measure" && (
+                        <label className="flex flex-col gap-1">
+                            <span className={labelClass}>Target station</span>
+                            <select
+                                className={inputClass}
+                                value={targetStationId}
+                                onChange={(event) =>
+                                    setTargetStationId(event.target.value)
+                                }
+                            >
+                                {railStations.map((station) => {
+                                    const target =
+                                        railStationTargetFromFeature(station);
+                                    return (
+                                        <option
+                                            key={target.id}
+                                            value={target.id}
+                                        >
+                                            {target.name}
+                                        </option>
+                                    );
+                                })}
+                            </select>
+                        </label>
+                    )}
+
                     {usesCategory && nearest && (
                         <div className="rounded-md border border-white/15 bg-black/20 p-2 text-sm">
                             Your nearest {categoryLabel(category)}:{" "}
@@ -750,7 +872,13 @@ export const HiderSidebar = () => {
                     <button
                         type="button"
                         className="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold disabled:opacity-50"
-                        disabled={!hiderLoc || computing}
+                        disabled={
+                            !hiderLoc ||
+                            computing ||
+                            (type === "measuring" &&
+                                category === "rail-measure" &&
+                                !targetRailStation)
+                        }
                         onClick={computeAnswer}
                     >
                         {computing ? "Working it out…" : "Get my answer"}

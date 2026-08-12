@@ -1,7 +1,5 @@
 import { z } from "zod";
 
-import { defaultUnit } from "@/lib/context";
-
 import { ICON_COLORS } from "./api/constants";
 
 export const NO_GROUP = "NO_GROUP";
@@ -103,14 +101,6 @@ const ordinaryBaseQuestionSchema = z.object({
     hidden: z.boolean().default(false),
 });
 
-const getDefaultUnit = () => {
-    try {
-        return defaultUnit.get();
-    } catch {
-        return "miles";
-    }
-};
-
 const radiusQuestionSchema = ordinaryBaseQuestionSchema.extend({
     radius: z.number().min(0, "You cannot have a negative radius").default(15),
     unit: unitsSchema.default("kilometers"),
@@ -120,7 +110,7 @@ const radiusQuestionSchema = ordinaryBaseQuestionSchema.extend({
 const tentacleLocationsOne = z.union([
     z.literal("museum").describe("Museums"),
     z.literal("hospital").describe("Hospitals"),
-    z.literal("cinema").describe("Movie Theaters"),
+    z.literal("cinema").describe("Movie Theatre"),
     z.literal("library").describe("Libraries"),
 ]);
 
@@ -278,6 +268,8 @@ const hidingZoneMatchingQuestionsSchema = baseMatchingQuestionSchema.extend({
     ]),
     hiderStreetPathName: z.string().optional(),
     seekerStreetPathName: z.string().optional(),
+    hiderStationName: z.string().optional(),
+    seekerStationName: z.string().optional(),
 });
 
 const customMatchingQuestionSchema = baseMatchingQuestionSchema.extend({
@@ -348,6 +340,14 @@ const ordinaryMeasuringQuestionSchema = baseMeasuringQuestionSchema.extend({
 
 const hidingZoneMeasuringQuestionsSchema = baseMeasuringQuestionSchema.extend({
     type: z.literal("rail-measure").describe("Rail Station Question"),
+    targetStation: z
+        .object({
+            id: z.string(),
+            name: z.string(),
+            latitude: z.number(),
+            longitude: z.number(),
+        })
+        .optional(),
 });
 
 const homeGameMeasuringQuestionsSchema = baseMeasuringQuestionSchema.extend({

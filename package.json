@@ -13,6 +13,7 @@
         "generate:spoons-pois": "node scripts/generate-spoons-pois.mjs",
         "generate:street-paths": "node scripts/generate-street-path-samples.mjs",
         "generate:admin-districts": "node scripts/generate-admin-districts.mjs",
+        "generate:question-data": "node scripts/generate-question-data.mjs",
         "cap:sync": "cross-env CAPACITOR=1 astro build && cap sync android",
         "cap:open": "cap open android",
         "cap:apk": "cross-env CAPACITOR=1 astro build && cap sync android && cap open android"

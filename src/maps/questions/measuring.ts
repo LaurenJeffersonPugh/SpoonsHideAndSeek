@@ -1,5 +1,5 @@
 import * as turf from "@turf/turf";
-import type { Feature, MultiPolygon } from "geojson";
+import type { Feature, Geometry, MultiPolygon, Point, Polygon } from "geojson";
 import _ from "lodash";
 import osmtogeojson from "osmtogeojson";
 import { toast } from "react-toastify";
@@ -9,25 +9,29 @@ import {
     mapGeoJSON,
     mapGeoLocation,
     polyGeoJSON,
-    trainStations,
 } from "@/lib/context";
 import {
     fetchCoastline,
     findPlacesInZone,
     getOverpassData,
+    loadAdminBoundaries,
     loadPregeneratedPois,
+    loadStaticMeasuringData,
+    loadTransitStations,
     LOCATION_FIRST_TAG,
     nearestToQuestion,
     prettifyLocation,
-    loadAdminBoundaries,
 } from "@/maps/api";
 import {
     arcBufferToPoint,
-    connectToSeparateLines,
-    groupObjects,
     holedMask,
     modifyMapData,
+    safeUnion,
 } from "@/maps/geo-utils";
+import {
+    qualifiesAsHighSpeedRail,
+    qualifiesAsHighSpeedTrainService,
+} from "@/maps/rail-speed";
 import type {
     APILocations,
     HomeGameMeasuringQuestions,
@@ -54,6 +58,240 @@ const featureLines = (features: Feature[]) =>
         return [feature];
     });
 
+const findLiveHighSpeedRailLines = async () => {
+    const mapData = mapGeoJSON.get();
+    if (!mapData) return [];
+    const [longitude, latitude] = turf.center(mapData).geometry.coordinates;
+    const data = await getOverpassData(
+        `[out:json][timeout:120];
+(
+  way["railway"="rail"]["maxspeed"](around:100000,${latitude},${longitude});
+  way["railway"="rail"]["highspeed"="yes"](around:100000,${latitude},${longitude});
+)->.candidate;
+(
+  relation["type"="route"]["route"="train"]["operator"~"Grand Central|LNER|Lumo|London North Eastern Railway",i](around:100000,${latitude},${longitude});
+  relation["type"="route"]["route"="train"]["ref"~"^GC( |$)"](around:100000,${latitude},${longitude});
+)->.services;
+(
+  .candidate;
+  .services;
+  relation(bw.candidate)["type"="route"]["route"~"^(railway|train)$"];
+);
+out body geom;`,
+        "Finding high-speed train lines...",
+    );
+    const qualifyingWayIds = new Set(
+        (data.elements ?? [])
+            .filter(
+                (element: any) =>
+                    element.type === "way" &&
+                    qualifiesAsHighSpeedRail(element.tags ?? {}),
+            )
+            .map((element: any) => element.id),
+    );
+    const relatedQualifyingLines = (data.elements ?? []).filter(
+        (element: any) =>
+            element.type === "relation" &&
+            (element.members ?? []).some(
+                (member: any) =>
+                    member.type === "way" && qualifyingWayIds.has(member.ref),
+            ),
+    );
+    const physicalRailwayRelations = relatedQualifyingLines.filter(
+        (relation: any) => relation.tags?.route === "railway",
+    );
+    const explicitHighSpeedServiceRelations = (data.elements ?? []).filter(
+        (element: any) =>
+            element.type === "relation" &&
+            qualifiesAsHighSpeedTrainService(element.tags ?? {}),
+    );
+    const qualifyingRelationsById = new Map(
+        [...physicalRailwayRelations, ...explicitHighSpeedServiceRelations].map(
+            (relation: any) => [relation.id, relation],
+        ),
+    );
+    if (qualifyingRelationsById.size === 0) {
+        for (const relation of relatedQualifyingLines.filter(
+            (element: any) => element.tags?.route === "train",
+        )) {
+            qualifyingRelationsById.set(relation.id, relation);
+        }
+    }
+    const qualifyingRelations = [...qualifyingRelationsById.values()];
+    const calculationBbox = turf.bbox(
+        turf.buffer(turf.bboxPolygon(turf.bbox(mapData)), 16, {
+            units: "miles",
+        })!,
+    );
+    const linesByWay = new Map<string, Feature>();
+
+    for (const relation of qualifyingRelations) {
+        const routeName =
+            relation.tags?.ref ??
+            relation.tags?.name ??
+            "High-Speed Train Line";
+        for (const member of relation.members ?? []) {
+            if (
+                member.type !== "way" ||
+                !Array.isArray(member.geometry) ||
+                member.geometry.length < 2
+            ) {
+                continue;
+            }
+            const line = turf.lineString(
+                member.geometry.map(({ lon, lat }: any) => [lon, lat]),
+                {
+                    name: "High-Speed Train Line",
+                    osmWayId: member.ref,
+                    routeNames: [routeName],
+                },
+            );
+            try {
+                const clipped = turf.bboxClip(line, calculationBbox);
+                if (clipped.geometry.coordinates.length > 0) {
+                    linesByWay.set(String(member.ref), clipped);
+                }
+            } catch {
+                // The route does not intersect the local calculation area.
+            }
+        }
+    }
+
+    for (const element of data.elements ?? []) {
+        if (
+            element.type !== "way" ||
+            !qualifyingWayIds.has(element.id) ||
+            !Array.isArray(element.geometry) ||
+            element.geometry.length < 2 ||
+            linesByWay.has(String(element.id))
+        ) {
+            continue;
+        }
+        const line = turf.lineString(
+            element.geometry.map(({ lon, lat }: any) => [lon, lat]),
+            {
+                name:
+                    element.tags?.name ??
+                    element.tags?.ref ??
+                    "High-Speed Train Line",
+                osmWayId: element.id,
+            },
+        );
+        if (turf.booleanIntersects(line, turf.bboxPolygon(calculationBbox))) {
+            linesByWay.set(String(element.id), line);
+        }
+    }
+
+    return [...linesByWay.values()];
+};
+
+const staticMeasuringFeatures = _.memoize(
+    async (type: Parameters<typeof loadStaticMeasuringData>[0]) =>
+        loadStaticMeasuringData<Geometry>(type),
+);
+
+export const findMeasuringTransitStations = _.memoize(
+    async (): Promise<Feature<Point>[]> => {
+        try {
+            const stations = await loadTransitStations();
+            if (stations.length > 0) return stations;
+        } catch {
+            // Fall through to live OSM data.
+        }
+
+        const data = await findPlacesInZone(
+            '["railway"="station"]',
+            "Finding rail stations...",
+            "nwr",
+            "center",
+            [],
+            60,
+        );
+        return (data.elements ?? [])
+            .map((element: any) => {
+                const longitude = element.lon ?? element.center?.lon;
+                const latitude = element.lat ?? element.center?.lat;
+                if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) {
+                    return null;
+                }
+                return turf.point([longitude, latitude], {
+                    name:
+                        element.tags?.["name:en"] ??
+                        element.tags?.name ??
+                        "Unnamed station",
+                    osmId: String(element.id),
+                });
+            })
+            .filter(Boolean) as Feature<Point>[];
+    },
+);
+
+type RailMeasuringQuestion = Extract<
+    MeasuringQuestion,
+    { type: "rail-measure" }
+>;
+
+export const railStationTargetFromFeature = (station: Feature<Point>) => {
+    const [longitude, latitude] = station.geometry.coordinates;
+    return {
+        id: String(
+            station.properties?.osmId ??
+                station.properties?.id ??
+                `${latitude},${longitude}`,
+        ),
+        name: String(
+            station.properties?.["name:en"] ??
+                station.properties?.name ??
+                "Unnamed station",
+        ),
+        latitude,
+        longitude,
+    };
+};
+
+export const resolveRailStationTarget = async (
+    question: RailMeasuringQuestion,
+) => {
+    if (question.targetStation) {
+        return turf.point(
+            [question.targetStation.longitude, question.targetStation.latitude],
+            {
+                id: question.targetStation.id,
+                name: question.targetStation.name,
+            },
+        );
+    }
+
+    // Compatibility for saved questions created before explicit targets were
+    // added: their original nearest station becomes the fixed target.
+    const stations = await findMeasuringTransitStations();
+    if (stations.length === 0) return null;
+    return turf.nearestPoint(
+        turf.point([question.lng, question.lat]),
+        turf.featureCollection(stations),
+    );
+};
+
+const loadElevationSamples = _.memoize(
+    async (): Promise<Feature<Point>[]> =>
+        staticMeasuringFeatures("elevation-grid") as Promise<Feature<Point>[]>,
+);
+
+const staticElevationMeters = async (lat: number, lng: number) => {
+    try {
+        const samples = await loadElevationSamples();
+        if (samples.length === 0) return null;
+        const nearest = turf.nearestPoint(
+            turf.point([lng, lat]),
+            turf.featureCollection(samples),
+        );
+        const elevation = nearest.properties?.elevation;
+        return typeof elevation === "number" ? elevation : null;
+    } catch {
+        return null;
+    }
+};
+
 const findInternationalBorderFeatures = async (lat: number, lng: number) => {
     for (const radius of [25000, 50000, 100000, 250000, 500000]) {
         const data = await getOverpassData(
@@ -61,7 +299,6 @@ const findInternationalBorderFeatures = async (lat: number, lng: number) => {
 [out:json][timeout:60];
 (
   way["boundary"="administrative"]["admin_level"="2"](around:${radius}, ${lat}, ${lng});
-  relation["boundary"="administrative"]["admin_level"="2"](around:${radius}, ${lat}, ${lng});
 );
 out geom;
 `,
@@ -78,6 +315,9 @@ out geom;
 };
 
 const fetchElevationMeters = async (lat: number, lng: number) => {
+    const staticElevation = await staticElevationMeters(lat, lng);
+    if (staticElevation !== null) return staticElevation;
+
     const response = await fetch(
         `https://api.open-meteo.com/v1/elevation?latitude=${lat}&longitude=${lng}`,
     );
@@ -93,32 +333,59 @@ const fetchElevationMeters = async (lat: number, lng: number) => {
     return typeof elevation === "number" ? elevation : null;
 };
 
-const highSpeedBase = _.memoize(
-    (features: Feature[]) => {
-        const grouped = groupObjects(features);
+const determineSeaLevelBoundary = _.memoize(
+    async (question: MeasuringQuestion) => {
+        let samples: Feature<Point>[];
+        try {
+            samples = await loadElevationSamples();
+        } catch {
+            return false;
+        }
+        if (samples.length === 0 || mapGeoJSON.get() === null) return false;
 
-        const neighbored = grouped
-            .map((group) => {
-                return turf.multiLineString(
-                    connectToSeparateLines(
-                        group
-                            .filter((x) => turf.getType(x) === "LineString")
-                            .map((x) => x.geometry.coordinates),
-                    ),
+        const seekerElevation = await fetchElevationMeters(
+            question.lat,
+            question.lng,
+        );
+        if (seekerElevation === null) return false;
+
+        const mapBbox = turf.bbox(mapGeoJSON.get()!);
+        const calculationBbox = turf.bbox(
+            turf.buffer(turf.bboxPolygon(mapBbox), 3, {
+                units: "kilometers",
+            })!,
+        ) as [number, number, number, number];
+        const relevantSamples = turf.featureCollection(
+            samples.filter((sample) => {
+                const [longitude, latitude] = sample.geometry.coordinates;
+                return (
+                    longitude >= calculationBbox[0] &&
+                    longitude <= calculationBbox[2] &&
+                    latitude >= calculationBbox[1] &&
+                    latitude <= calculationBbox[3]
                 );
-            })
-            .filter((x) => x.geometry.coordinates.length > 0);
+            }),
+        );
+        if (relevantSamples.features.length === 0) return false;
 
-        return turf.combine(
-            turf.buffer(
-                turf.simplify(turf.featureCollection(neighbored), {
-                    tolerance: 0.001,
-                }),
-                0.001,
-            )!,
-        ).features[0];
+        const voronoi = turf.voronoi(relevantSamples, {
+            bbox: calculationBbox,
+        });
+        const closerToSeaLevel = voronoi.features.filter((feature) => {
+            const elevation = feature.properties?.elevation;
+            return (
+                typeof elevation === "number" &&
+                Math.abs(elevation) <= Math.abs(seekerElevation)
+            );
+        }) as Feature<Polygon>[];
+        if (closerToSeaLevel.length === 0) return false;
+
+        return turf.simplify(
+            safeUnion(turf.featureCollection(closerToSeaLevel)),
+            { tolerance: 0.0001, highQuality: true },
+        );
     },
-    (features) => `${JSON.stringify(features.map((x) => x.geometry))}`,
+    (question) => `${question.lat},${question.lng}`,
 );
 
 const bboxExtension = (
@@ -149,18 +416,28 @@ export const determineMeasuringBoundary = async (
 
     switch (question.type) {
         case "highspeed-measure-shinkansen": {
-            const features = osmtogeojson(
-                await findPlacesInZone(
-                    "[highspeed=yes]",
-                    "Finding high-speed lines...",
-                    "nwr",
-                    "geom",
-                ),
-            ).features;
+            try {
+                const features = await staticMeasuringFeatures(
+                    "high-speed-rail-lines",
+                );
+                return features.length > 0 ? features : false;
+            } catch {
+                // Fall through to live OSM data.
+            }
 
-            return [highSpeedBase(features)];
+            const features = await findLiveHighSpeedRailLines();
+
+            return features.length > 0 ? features : false;
         }
         case "international-border": {
+            try {
+                const features = await staticMeasuringFeatures(
+                    "international-borders",
+                );
+                if (features.length > 0) return features;
+            } catch {
+                // Fall through to live OSM data.
+            }
             return await findInternationalBorderFeatures(
                 question.lat,
                 question.lng,
@@ -227,6 +504,12 @@ export const determineMeasuringBoundary = async (
             ];
         }
         case "airport":
+            try {
+                const features = await staticMeasuringFeatures("airports");
+                if (features.length > 0) return features;
+            } catch {
+                // Fall through to live OSM data.
+            }
             return [
                 turf.combine(
                     turf.featureCollection(
@@ -248,6 +531,12 @@ export const determineMeasuringBoundary = async (
                 ).features[0],
             ];
         case "body-water": {
+            try {
+                const features = await staticMeasuringFeatures("body-water");
+                if (features.length > 0) return features;
+            } catch {
+                // Fall through to live OSM data.
+            }
             const data = await findPlacesInZone(
                 '["natural"="water"]',
                 "Finding bodies of water...",
@@ -333,7 +622,6 @@ export const determineMeasuringBoundary = async (
                 turf.featureCollection((question as any).geo.features),
             ).features;
         case "zoo_aquarium":
-        case "sea-level":
         case "theme_park":
         case "peak":
         case "museum":
@@ -343,7 +631,12 @@ export const determineMeasuringBoundary = async (
         case "golf_course":
         case "consulate":
         case "park":
-        case "rail-measure":
+            return false;
+        case "rail-measure": {
+            const target = await resolveRailStationTarget(question);
+            return target ? [target] : false;
+        }
+        case "sea-level":
             return false;
     }
 };
@@ -369,6 +662,10 @@ const bufferedDeterminer = _.memoize(
                 ? polyGeoJSON.get()
                 : mapGeoLocation.get(),
             geo: (question as any).geo,
+            targetStation:
+                question.type === "rail-measure"
+                    ? question.targetStation
+                    : undefined,
         }),
 );
 
@@ -377,6 +674,12 @@ export const adjustPerMeasuring = async (
     mapData: any,
 ) => {
     if (mapData === null) return;
+
+    if (question.type === "sea-level") {
+        const boundary = await determineSeaLevelBoundary(question);
+        if (boundary === false) return mapData;
+        return modifyMapData(mapData, boundary, question.hiderCloser);
+    }
 
     const buffer = await bufferedDeterminer(question);
 
@@ -432,31 +735,15 @@ export const hiderifyMeasuring = async (
     }
 
     if (question.type === "rail-measure") {
-        const stations = trainStations.get();
+        const target = await resolveRailStationTarget(question);
+        if (!target) return question;
 
-        if (stations.length === 0) {
-            return question;
-        }
-
-        const location = turf.point([question.lng, question.lat]);
-
-        const nearestTrainStation = turf.nearestPoint(
-            location,
-            turf.featureCollection(stations.map((x) => x.properties)),
-        );
-
-        const distance = turf.distance(location, nearestTrainStation);
-
+        const seeker = turf.point([question.lng, question.lat]);
         const hider = turf.point([$hiderMode.longitude, $hiderMode.latitude]);
+        const seekerDistance = turf.distance(seeker, target);
+        const hiderDistance = turf.distance(hider, target);
 
-        const hiderNearest = turf.nearestPoint(
-            hider,
-            turf.featureCollection(stations.map((x) => x.properties)),
-        );
-
-        const hiderDistance = turf.distance(hider, hiderNearest);
-
-        question.hiderCloser = hiderDistance < distance;
+        question.hiderCloser = hiderDistance < seekerDistance;
         return question;
     }
 
@@ -513,6 +800,11 @@ export const hiderifyMeasuring = async (
 
 export const measuringPlanningPolygon = async (question: MeasuringQuestion) => {
     try {
+        if (question.type === "sea-level") {
+            const boundary = await determineSeaLevelBoundary(question);
+            return boundary === false ? false : turf.polygonToLine(boundary);
+        }
+
         const buffered = await bufferedDeterminer(question);
 
         if (buffered === false) return false;

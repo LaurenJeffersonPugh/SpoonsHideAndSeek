@@ -25,6 +25,7 @@ import {
     loadPregeneratedPois,
     loadStreetPathLines,
     loadStreetPathSamples,
+    loadTransitStations,
     LOCATION_FIRST_TAG,
     nearestToQuestion,
     prettifyLocation,
@@ -324,6 +325,114 @@ const findStreetOrPathLinesInZone = _.memoize(async () => {
     }
 });
 
+export const findTransitStationsInZone = _.memoize(
+    async (): Promise<FeatureCollection<Point>> => {
+        try {
+            const stations = await loadTransitStations();
+            if (stations.length > 0) {
+                return turf.featureCollection(
+                    _.uniqBy(stations, (station) =>
+                        station.geometry.coordinates.join(","),
+                    ),
+                );
+            }
+        } catch {
+            // Fall through to live OSM data.
+        }
+
+        return osmtogeojson(
+            await findPlacesInZone(
+                '["railway"="station"]',
+                "Finding train stations...",
+                "nwr",
+                "center",
+                [],
+                60,
+            ),
+        ) as FeatureCollection<Point>;
+    },
+);
+
+const stationName = (station: Feature<Point>) =>
+    (station.properties?.["name:en"] ??
+        station.properties?.name ??
+        "") as string;
+
+const stationRoutes = (station: Feature<Point>) =>
+    Array.isArray(station.properties?.routeIds)
+        ? (station.properties.routeIds as string[])
+        : [];
+
+const stationOsmNodeId = (station: Feature<Point>) => {
+    const value = station.properties?.osmId ?? station.properties?.id;
+    if (value === undefined || value === null) return null;
+    const id = String(value).split("/").pop();
+    return id && /^\d+$/.test(id) ? id : null;
+};
+
+const stationsShareTransitLine = (
+    stationA: Feature<Point>,
+    stationB: Feature<Point>,
+) => {
+    const routesB = new Set(stationRoutes(stationB));
+    return stationRoutes(stationA).some((route) => routesB.has(route));
+};
+
+const stationMatchingBoundary = async (question: MatchingQuestion) => {
+    const stations = await findTransitStationsInZone();
+    if (stations.features.length === 0) return false;
+
+    const seekerStation = turf.nearestPoint(
+        turf.point([question.lng, question.lat]),
+        stations,
+    );
+    const mapOrStations = mapGeoJSON.get() ?? stations;
+    const calculationBbox = turf.bbox(
+        turf.buffer(turf.bboxPolygon(turf.bbox(mapOrStations)), 3, {
+            units: "kilometers",
+        })!,
+    ) as [number, number, number, number];
+    const voronoi = turf.voronoi(stations, { bbox: calculationBbox });
+    const seekerNameLength = stationName(seekerStation).length;
+    let fallbackRouteNodes: Set<number> | null = null;
+    if (
+        question.type === "same-train-line" &&
+        stationRoutes(seekerStation).length === 0
+    ) {
+        const osmNodeId = stationOsmNodeId(seekerStation);
+        if (osmNodeId) {
+            fallbackRouteNodes = new Set(
+                await trainLineNodeFinder(`node/${osmNodeId}`),
+            );
+        }
+    }
+    const matchingCells = voronoi.features.filter((feature) => {
+        const site = turf.point(feature.properties?.coordinates ?? [0, 0], {
+            ...feature.properties,
+        });
+
+        if (question.type === "same-train-line") {
+            if (stationsShareTransitLine(site, seekerStation)) return true;
+            const osmNodeId = stationOsmNodeId(site);
+            return Boolean(
+                fallbackRouteNodes?.has(Number.parseInt(osmNodeId ?? "", 10)),
+            );
+        }
+
+        const length = stationName(site).length;
+        if (question.lengthComparison === "shorter") {
+            return length < seekerNameLength;
+        }
+        if (question.lengthComparison === "longer") {
+            return length > seekerNameLength;
+        }
+        return length === seekerNameLength;
+    }) as Feature<Polygon>[];
+
+    if (matchingCells.length === 0) return false;
+    return safeUnion(turf.featureCollection(matchingCells));
+};
+
 export const findMatchingPlaces = async (question: MatchingQuestion) => {
     switch (question.type) {
         case "major-city": {
@@ -412,9 +521,10 @@ export const determineMatchingBoundary = _.memoize(
             case "golf_course":
             case "park":
             case "same-first-letter-station":
+                return false;
             case "same-length-station":
             case "same-train-line": {
-                return false;
+                return stationMatchingBoundary(question);
             }
             case "street-path": {
                 const streetPathSamples =
@@ -585,7 +695,11 @@ export const adjustPerMatching = async (
         return mapData;
     }
 
-    return modifyMapData(mapData, boundary, question.same);
+    return modifyMapData(
+        mapData,
+        boundary,
+        question.type === "same-length-station" ? true : question.same,
+    );
 };
 
 export const hiderifyMatching = async (
@@ -661,13 +775,7 @@ export const hiderifyMatching = async (
             return question;
         }
 
-        const places = osmtogeojson(
-            await findPlacesInZone(
-                "[railway=station]",
-                "Finding train stations. This may take a while. Do not press any buttons while this is processing. Don't worry, it will be cached.",
-                "node",
-            ),
-        ) as FeatureCollection<Point>;
+        const places = await findTransitStationsInZone();
 
         const nearestHiderTrainStation = turf.nearestPoint(hiderPoint, places);
         const nearestSeekerTrainStation = turf.nearestPoint(
@@ -675,19 +783,25 @@ export const hiderifyMatching = async (
             places,
         );
 
+        question.hiderStationName = stationName(nearestHiderTrainStation);
+        question.seekerStationName = stationName(nearestSeekerTrainStation);
+
         if (question.type === "same-train-line") {
-            const nodes = await trainLineNodeFinder(
-                nearestSeekerTrainStation.properties.id,
-            );
-
-            const hiderId = parseInt(
-                nearestHiderTrainStation.properties.id.split("/")[1],
-            );
-
-            if (nodes.includes(hiderId)) {
-                question.same = true;
+            if (
+                stationRoutes(nearestHiderTrainStation).length > 0 &&
+                stationRoutes(nearestSeekerTrainStation).length > 0
+            ) {
+                question.same = stationsShareTransitLine(
+                    nearestHiderTrainStation,
+                    nearestSeekerTrainStation,
+                );
             } else {
-                question.same = false;
+                const seekerId = stationOsmNodeId(nearestSeekerTrainStation);
+                const hiderId = stationOsmNodeId(nearestHiderTrainStation);
+                if (seekerId && hiderId) {
+                    const nodes = await trainLineNodeFinder(`node/${seekerId}`);
+                    question.same = nodes.includes(Number.parseInt(hiderId));
+                }
             }
         }
 

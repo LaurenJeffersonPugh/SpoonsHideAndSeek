@@ -49,6 +49,7 @@ import {
     type CustomStation,
     findPlacesInZone,
     findTentacleLocations,
+    loadTransitStations,
     nearestToQuestion,
     normalizeToStationFeatures,
     parseCustomStationsFromText,
@@ -65,6 +66,7 @@ import {
     mergeDuplicateStation,
     safeUnion,
 } from "@/maps/geo-utils";
+import { resolveRailStationTarget } from "@/maps/questions/measuring";
 
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
@@ -563,12 +565,50 @@ export const ZoneSidebar = () => {
                         );
 
                         if (question.data.type === "same-train-line") {
-                            // Custom-only lists don't have reliable OSM IDs
-                            if (useCustomStations && !includeDefaultStations) {
-                                toast.warning(
-                                    "'Same train line' isn't supported with custom-only station lists; skipping this filter.",
+                            let usedStaticTransitData = false;
+                            try {
+                                const staticStations =
+                                    await loadTransitStations();
+                                const staticCollection =
+                                    turf.featureCollection(staticStations);
+                                const seekerStation = turf.nearestPoint(
+                                    location,
+                                    staticCollection,
                                 );
-                            } else {
+                                const seekerRoutes = new Set<string>(
+                                    Array.isArray(
+                                        seekerStation.properties?.routeIds,
+                                    )
+                                        ? seekerStation.properties.routeIds
+                                        : [],
+                                );
+
+                                if (seekerRoutes.size > 0) {
+                                    circles = circles.filter((circle) => {
+                                        const station = turf.nearestPoint(
+                                            circle.properties,
+                                            staticCollection,
+                                        );
+                                        const routes = Array.isArray(
+                                            station.properties?.routeIds,
+                                        )
+                                            ? station.properties.routeIds
+                                            : [];
+                                        const sharesLine = routes.some(
+                                            (route: string) =>
+                                                seekerRoutes.has(route),
+                                        );
+                                        return question.data.same
+                                            ? sharesLine
+                                            : !sharesLine;
+                                    });
+                                    usedStaticTransitData = true;
+                                }
+                            } catch {
+                                // Fall through to the existing live OSM lookup.
+                            }
+
+                            if (!usedStaticTransitData) {
                                 const nid = nearestTrainStation.properties
                                     .id as string | undefined;
                                 if (!nid || !nid.includes("/")) {
@@ -1474,38 +1514,23 @@ async function selectionProcess(
             question.id === "measuring" &&
             question.data.type === "rail-measure"
         ) {
-            const location = turf.point([question.data.lng, question.data.lat]);
+            const targetStation = await resolveRailStationTarget(question.data);
+            if (!targetStation) continue;
 
-            const nearestTrainStation = turf.nearestPoint(
-                location,
-                turf.featureCollection(
-                    stations.map((x) => x.properties.geometry),
-                ),
-            );
-
-            const distance = turf.distance(location, nearestTrainStation);
-
-            const circles = stations
-                .filter(
-                    (x) =>
-                        turf.distance(
-                            station.properties.geometry,
-                            x.properties.geometry,
-                        ) <
-                        distance + 1.61 * $hidingRadius,
-                )
-                .map((x) => turf.circle(x.properties.geometry, distance));
+            const seeker = turf.point([question.data.lng, question.data.lat]);
+            const distance = turf.distance(seeker, targetStation);
+            const targetCircle = turf.circle(targetStation, distance);
 
             if (question.data.hiderCloser) {
                 mapData = safeUnion(
                     turf.featureCollection([
                         ...mapData.features,
-                        holedMask(turf.featureCollection(circles)),
+                        holedMask(turf.featureCollection([targetCircle])),
                     ]),
                 );
             } else {
                 mapData = safeUnion(
-                    turf.featureCollection([...mapData.features, ...circles]),
+                    turf.featureCollection([...mapData.features, targetCircle]),
                 );
             }
         }

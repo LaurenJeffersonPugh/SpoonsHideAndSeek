@@ -2,6 +2,7 @@ import * as turf from "@turf/turf";
 import type {
     Feature,
     FeatureCollection,
+    Geometry,
     LineString,
     MultiPolygon,
     Point,
@@ -79,6 +80,36 @@ export const getOverpassData = async (
 const poiDataUrl = (location: string) =>
     `${import.meta.env.BASE_URL.replace(/\/?$/, "/")}data/pois/${location}.geojson`;
 
+const localDataUrl = (path: string) =>
+    `${import.meta.env.BASE_URL.replace(/\/?$/, "/")}data/${path}`;
+
+const loadLocalFeatureCollection = async <G extends Geometry>(
+    path: string,
+): Promise<Feature<G>[]> => {
+    const response = await fetch(localDataUrl(path));
+    if (!response.ok) {
+        throw new Error(
+            `Failed to load static question data ${path}: ${response.status} ${response.statusText}`,
+        );
+    }
+    const geo = (await response.json()) as FeatureCollection<G>;
+    return geo.features;
+};
+
+export type StaticMeasuringData =
+    | "airports"
+    | "high-speed-rail-lines"
+    | "international-borders"
+    | "body-water"
+    | "elevation-grid";
+
+export const loadStaticMeasuringData = async <G extends Geometry>(
+    type: StaticMeasuringData,
+) => loadLocalFeatureCollection<G>(`measuring/${type}.geojson`);
+
+export const loadTransitStations = async () =>
+    loadLocalFeatureCollection<Point>("transit-stations.geojson");
+
 /**
  * Loads a pre-generated POI dataset (see scripts/generate-spoons-pois.mjs)
  * from the local /data/pois folder. Used by the "-full" matching/measuring
@@ -135,29 +166,11 @@ export const loadAdminBoundaries = async (
 };
 
 export const loadStreetPathSamples = async (): Promise<Feature<Point>[]> => {
-    const response = await fetch(
-        `${import.meta.env.BASE_URL.replace(/\/?$/, "/")}data/street-path-samples.geojson`,
-    );
-    if (!response.ok) {
-        throw new Error(
-            `Failed to load pregenerated street/path samples: ${response.status} ${response.statusText}`,
-        );
-    }
-    const geo = (await response.json()) as FeatureCollection<Point>;
-    return geo.features;
+    return loadLocalFeatureCollection<Point>("street-path-samples.geojson");
 };
 
 export const loadStreetPathLines = async (): Promise<Feature<LineString>[]> => {
-    const response = await fetch(
-        `${import.meta.env.BASE_URL.replace(/\/?$/, "/")}data/street-path-lines.geojson`,
-    );
-    if (!response.ok) {
-        throw new Error(
-            `Failed to load pregenerated street/path lines: ${response.status} ${response.statusText}`,
-        );
-    }
-    const geo = (await response.json()) as FeatureCollection<LineString>;
-    return geo.features;
+    return loadLocalFeatureCollection<LineString>("street-path-lines.geojson");
 };
 
 export const determineGeoJSON = async (
