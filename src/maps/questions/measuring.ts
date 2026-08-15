@@ -44,6 +44,11 @@ import {
     terrainCloserToSeaLevelPolygon,
     terrainElevationMeters,
 } from "@/maps/terrain";
+import {
+    loadWaterDistanceGrid,
+    waterCloserThanReferencePolygon,
+    waterDistanceMeters,
+} from "@/maps/water-distance";
 
 const osmTagForLocation = (location: APILocations) => {
     if (location === "amusement_park") {
@@ -489,6 +494,41 @@ const determineSeaLevelBoundary = _.memoize(
     (question) => `${question.lat},${question.lng}`,
 );
 
+const determineBodyWaterBoundary = _.memoize(
+    async (question: MeasuringQuestion) => {
+        const mapData = mapGeoJSON.get();
+        if (mapData === null) return false;
+        try {
+            const grid = await loadWaterDistanceGrid();
+            const seekerDistance = waterDistanceMeters(
+                grid,
+                question.lat,
+                question.lng,
+            );
+            if (seekerDistance === null) return false;
+            const calculationBbox = turf.bbox(
+                turf.buffer(turf.bboxPolygon(turf.bbox(mapData)), 3, {
+                    units: "kilometers",
+                })!,
+            ) as [number, number, number, number];
+            const boundary = waterCloserThanReferencePolygon(
+                grid,
+                calculationBbox,
+                seekerDistance,
+            );
+            return boundary
+                ? turf.simplify(boundary, {
+                      tolerance: 0.00005,
+                      highQuality: true,
+                  })
+                : false;
+        } catch {
+            return false;
+        }
+    },
+    (question) => `${question.lat},${question.lng}`,
+);
+
 const bboxExtension = (
     bBox: [number, number, number, number],
     distance: number,
@@ -793,6 +833,13 @@ export const adjustPerMeasuring = async (
         return modifyMapData(mapData, boundary, question.hiderCloser);
     }
 
+    if (question.type === "body-water") {
+        const boundary = await determineBodyWaterBoundary(question);
+        if (boundary !== false) {
+            return modifyMapData(mapData, boundary, question.hiderCloser);
+        }
+    }
+
     const buffer = await bufferedDeterminer(question);
 
     if (buffer === false) return mapData;
@@ -883,6 +930,28 @@ export const hiderifyMeasuring = async (
         return question;
     }
 
+    if (question.type === "body-water") {
+        try {
+            const grid = await loadWaterDistanceGrid();
+            const seekerDistance = waterDistanceMeters(
+                grid,
+                question.lat,
+                question.lng,
+            );
+            const hiderDistance = waterDistanceMeters(
+                grid,
+                $hiderMode.latitude,
+                $hiderMode.longitude,
+            );
+            if (seekerDistance !== null && hiderDistance !== null) {
+                question.hiderCloser = hiderDistance < seekerDistance;
+                return question;
+            }
+        } catch {
+            // Fall through to the static geometry/live-data fallback below.
+        }
+    }
+
     const $mapGeoJSON = mapGeoJSON.get();
     if ($mapGeoJSON === null) return question;
 
@@ -917,6 +986,11 @@ export const measuringPlanningPolygon = async (question: MeasuringQuestion) => {
         if (question.type === "sea-level") {
             const boundary = await determineSeaLevelBoundary(question);
             return boundary === false ? false : turf.polygonToLine(boundary);
+        }
+
+        if (question.type === "body-water") {
+            const boundary = await determineBodyWaterBoundary(question);
+            if (boundary !== false) return turf.polygonToLine(boundary);
         }
 
         const buffered = await bufferedDeterminer(question);

@@ -30,6 +30,7 @@ import {
 } from "@/maps/questions/measuring";
 import { type MeasuringQuestion } from "@/maps/schema";
 import { SEA_LEVEL_QUESTION } from "@/maps/sea-level";
+import { BODY_OF_WATER_QUESTION } from "@/maps/water-distance";
 
 import { QuestionCard } from "./base";
 
@@ -300,6 +301,11 @@ export const MeasuringQuestionComponent = ({
             {data.type === "sea-level" && (
                 <p className="px-2 text-sm text-muted-foreground">
                     {SEA_LEVEL_QUESTION}
+                </p>
+            )}
+            {data.type === "body-water" && (
+                <p className="px-2 text-sm text-muted-foreground">
+                    {BODY_OF_WATER_QUESTION}
                 </p>
             )}
             {questionSpecific}

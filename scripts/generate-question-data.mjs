@@ -1,8 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import process from "node:process";
 
 import * as turf from "@turf/turf";
 import osmtogeojson from "osmtogeojson";
+
+import { generateWaterDistanceData } from "./generate-water-distance-data.mjs";
 
 const OVERPASS_ENDPOINTS = [
     "https://overpass-api.de/api/interpreter",
@@ -634,6 +637,7 @@ out geom tags;`,
         path.join(measuringDir, "body-water.geojson"),
         waterFeatures,
     );
+    await generateWaterDistanceData();
 }
 
 if (osmOnly) {

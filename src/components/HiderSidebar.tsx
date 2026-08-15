@@ -26,6 +26,7 @@ import type {
     ThermometerQuestion,
 } from "@/maps/schema";
 import { SEA_LEVEL_QUESTION } from "@/maps/sea-level";
+import { BODY_OF_WATER_QUESTION } from "@/maps/water-distance";
 
 type QuestionType =
     | "radius"
@@ -486,6 +487,10 @@ export const HiderSidebar = () => {
                     result = q.hiderCloser
                         ? "You are CLOSER to sea level than the seeker."
                         : "You are FURTHER from sea level than the seeker.";
+                } else if (q.type === "body-water") {
+                    result = q.hiderCloser
+                        ? "YES: you are closer to a body of water than the seekers."
+                        : "NO: you are not closer to a body of water than the seekers.";
                 } else {
                     result = q.hiderCloser
                         ? `You are CLOSER to a ${categoryLabel(category)} than the seeker.`
@@ -832,6 +837,12 @@ export const HiderSidebar = () => {
                     {type === "measuring" && category === "sea-level" && (
                         <p className="text-sm text-white/80">
                             {SEA_LEVEL_QUESTION}
+                        </p>
+                    )}
+
+                    {type === "measuring" && category === "body-water" && (
+                        <p className="text-sm text-white/80">
+                            {BODY_OF_WATER_QUESTION}
                         </p>
                     )}
 
