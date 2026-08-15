@@ -3,6 +3,7 @@ import * as turf from "@turf/turf";
 import { ClipboardPaste, SidebarCloseIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { TransitStopMultiSelect } from "@/components/TransitStopMultiSelect";
 import { hiderSidebarOpen } from "@/components/ui/sidebar-l";
 import { leafletMapContext } from "@/lib/context";
 import { parseCoordinates } from "@/lib/coordinates";
@@ -26,6 +27,10 @@ import type {
     ThermometerQuestion,
 } from "@/maps/schema";
 import { SEA_LEVEL_QUESTION } from "@/maps/sea-level";
+import {
+    type SelectedTransitStop,
+    TRANSIT_LINE_QUESTION,
+} from "@/maps/spoons-stops";
 import { BODY_OF_WATER_QUESTION } from "@/maps/water-distance";
 
 type QuestionType =
@@ -175,6 +180,9 @@ export const HiderSidebar = () => {
         Awaited<ReturnType<typeof findMeasuringTransitStations>>
     >([]);
     const [targetStationId, setTargetStationId] = useState("");
+    const [selectedTransitStops, setSelectedTransitStops] = useState<
+        SelectedTransitStop[]
+    >([]);
     // Matching can either compare nearest-place ("category") or which
     // administration district you're both in ("council" / "ward").
     const [matchMode, setMatchMode] = useState<"category" | "council" | "ward">(
@@ -300,7 +308,8 @@ export const HiderSidebar = () => {
         if (
             !isCategory ||
             !hiderLoc ||
-            (type === "measuring" && category === "rail-measure")
+            (type === "measuring" && category === "rail-measure") ||
+            (type === "matching" && category === "same-train-line")
         ) {
             setNearest(null);
             return;
@@ -532,6 +541,7 @@ export const HiderSidebar = () => {
                         lng: num(lng),
                         type: category,
                         same: true,
+                        selectedStops: selectedTransitStops,
                     } as unknown as MatchingQuestion,
                     hiderLoc,
                 );
@@ -543,14 +553,10 @@ export const HiderSidebar = () => {
                     result = q.same
                         ? `SAME — your nearest street or path is ${q.hiderStreetPathName}. The seeker's is also ${q.seekerStreetPathName}.`
                         : `DIFFERENT — your nearest street or path is ${q.hiderStreetPathName}. The seeker's is ${q.seekerStreetPathName}.`;
-                } else if (
-                    q.type === "same-train-line" &&
-                    q.hiderStationName &&
-                    q.seekerStationName
-                ) {
+                } else if (q.type === "same-train-line" && q.hiderStationName) {
                     result = q.same
-                        ? `SAME — ${q.hiderStationName} and ${q.seekerStationName} share a transit line.`
-                        : `DIFFERENT — ${q.hiderStationName} and ${q.seekerStationName} do not share a transit line.`;
+                        ? `YES: the selected transit line stops at ${q.hiderStationName}, your nearest valid stop.`
+                        : `NO: the selected transit line does not stop at ${q.hiderStationName}, your nearest valid stop.`;
                 } else if (
                     q.type === "same-length-station" &&
                     q.hiderStationName &&
@@ -580,6 +586,11 @@ export const HiderSidebar = () => {
         type === "measuring" ||
         (type === "matching" && matchMode === "category");
     const usesRadius = type === "radius" || type === "tentacles";
+    const needsSeekerCoordinates = !(
+        type === "matching" &&
+        matchMode === "category" &&
+        category === "same-train-line"
+    );
 
     return (
         <div
@@ -696,50 +707,54 @@ export const HiderSidebar = () => {
             {/* Question form */}
             {type && (
                 <div className="mx-4 mb-6 mt-4 flex flex-col gap-3 rounded-md border border-white/15 p-3">
-                    <div className="flex items-center justify-between gap-2">
-                        <p className={labelClass}>
-                            {type === "thermometer"
-                                ? "Enter the seeker's start and end points."
-                                : "Enter the seeker's coordinates."}
-                        </p>
-                        <button
-                            type="button"
-                            className="flex shrink-0 items-center gap-1 rounded bg-blue-600 px-2 py-1 text-xs font-semibold hover:bg-blue-500"
-                            onClick={pasteSeekerCoords}
-                            title="Paste 'lat, lng' from the clipboard"
-                        >
-                            <ClipboardPaste className="h-3.5 w-3.5" />
-                            {pasteMsg ?? "Paste"}
-                        </button>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                        <label className="flex flex-col gap-1">
-                            <span className={labelClass}>
-                                {type === "thermometer"
-                                    ? "Start latitude"
-                                    : "Latitude"}
-                            </span>
-                            <input
-                                className={inputClass}
-                                type="number"
-                                value={lat}
-                                onChange={(e) => setLat(e.target.value)}
-                            />
-                        </label>
-                        <label className="flex flex-col gap-1">
-                            <span className={labelClass}>
-                                {type === "thermometer"
-                                    ? "Start longitude"
-                                    : "Longitude"}
-                            </span>
-                            <input
-                                className={inputClass}
-                                type="number"
-                                value={lng}
-                                onChange={(e) => setLng(e.target.value)}
-                            />
-                        </label>
-                    </div>
+                    {needsSeekerCoordinates && (
+                        <>
+                            <div className="flex items-center justify-between gap-2">
+                                <p className={labelClass}>
+                                    {type === "thermometer"
+                                        ? "Enter the seeker's start and end points."
+                                        : "Enter the seeker's coordinates."}
+                                </p>
+                                <button
+                                    type="button"
+                                    className="flex shrink-0 items-center gap-1 rounded bg-blue-600 px-2 py-1 text-xs font-semibold hover:bg-blue-500"
+                                    onClick={pasteSeekerCoords}
+                                    title="Paste 'lat, lng' from the clipboard"
+                                >
+                                    <ClipboardPaste className="h-3.5 w-3.5" />
+                                    {pasteMsg ?? "Paste"}
+                                </button>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                                <label className="flex flex-col gap-1">
+                                    <span className={labelClass}>
+                                        {type === "thermometer"
+                                            ? "Start latitude"
+                                            : "Latitude"}
+                                    </span>
+                                    <input
+                                        className={inputClass}
+                                        type="number"
+                                        value={lat}
+                                        onChange={(e) => setLat(e.target.value)}
+                                    />
+                                </label>
+                                <label className="flex flex-col gap-1">
+                                    <span className={labelClass}>
+                                        {type === "thermometer"
+                                            ? "Start longitude"
+                                            : "Longitude"}
+                                    </span>
+                                    <input
+                                        className={inputClass}
+                                        type="number"
+                                        value={lng}
+                                        onChange={(e) => setLng(e.target.value)}
+                                    />
+                                </label>
+                            </div>
+                        </>
+                    )}
 
                     {type === "thermometer" && (
                         <div className="grid grid-cols-2 gap-2">
@@ -834,6 +849,24 @@ export const HiderSidebar = () => {
                         </label>
                     )}
 
+                    {type === "matching" &&
+                        matchMode === "category" &&
+                        category === "same-train-line" && (
+                            <div className="flex flex-col gap-2">
+                                <p className="text-sm text-white/80">
+                                    {TRANSIT_LINE_QUESTION}
+                                </p>
+                                <TransitStopMultiSelect
+                                    selectedStops={selectedTransitStops}
+                                    onChange={(selectedStops) => {
+                                        setSelectedTransitStops(selectedStops);
+                                        setAnswer(null);
+                                    }}
+                                    disabled={computing}
+                                />
+                            </div>
+                        )}
+
                     {type === "measuring" && category === "sea-level" && (
                         <p className="text-sm text-white/80">
                             {SEA_LEVEL_QUESTION}
@@ -899,7 +932,10 @@ export const HiderSidebar = () => {
                             computing ||
                             (type === "measuring" &&
                                 category === "rail-measure" &&
-                                !targetRailStation)
+                                !targetRailStation) ||
+                            (type === "matching" &&
+                                category === "same-train-line" &&
+                                selectedTransitStops.length === 0)
                         }
                         onClick={computeAnswer}
                     >

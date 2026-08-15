@@ -253,6 +253,13 @@ const homeGameMatchingQuestionsSchema = baseMatchingQuestionSchema.extend({
     ]),
 });
 
+const matchingStationAnswerFields = {
+    hiderStreetPathName: z.string().optional(),
+    seekerStreetPathName: z.string().optional(),
+    hiderStationName: z.string().optional(),
+    seekerStationName: z.string().optional(),
+};
+
 const hidingZoneMatchingQuestionsSchema = baseMatchingQuestionSchema.extend({
     type: z.union([
         z.literal("street-path").describe("Street or Path Question"),
@@ -262,14 +269,25 @@ const hidingZoneMatchingQuestionsSchema = baseMatchingQuestionSchema.extend({
         z
             .literal("same-length-station")
             .describe("Station Has Same Length Question"),
-        z
-            .literal("same-train-line")
-            .describe("Station On Same Train Line Question"),
     ]),
-    hiderStreetPathName: z.string().optional(),
-    seekerStreetPathName: z.string().optional(),
-    hiderStationName: z.string().optional(),
-    seekerStationName: z.string().optional(),
+    ...matchingStationAnswerFields,
+});
+
+const transitLineMatchingQuestionSchema = baseMatchingQuestionSchema.extend({
+    type: z
+        .literal("same-train-line")
+        .describe("Selected Transit Line Stops At Hiding-Zone Station"),
+    selectedStops: z
+        .array(
+            z.object({
+                id: z.string(),
+                name: z.string(),
+                latitude: z.number(),
+                longitude: z.number(),
+            }),
+        )
+        .default([]),
+    ...matchingStationAnswerFields,
 });
 
 const customMatchingQuestionSchema = baseMatchingQuestionSchema.extend({
@@ -285,6 +303,7 @@ export const matchingQuestionSchema = z.union([
     ordinaryMatchingQuestionSchema.describe(NO_GROUP),
     customMatchingQuestionSchema.describe(NO_GROUP),
     hidingZoneMatchingQuestionsSchema.describe("Hiding Zone Mode"),
+    transitLineMatchingQuestionSchema.describe("Hiding Zone Mode"),
     homeGameMatchingQuestionsSchema.describe("Hiding Zone Mode"),
 ]);
 

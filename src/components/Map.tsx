@@ -4,8 +4,8 @@ import "leaflet-contextmenu";
 
 import { Capacitor } from "@capacitor/core";
 import {
-    Geolocation as CapacitorGeolocation,
     type CallbackID,
+    Geolocation as CapacitorGeolocation,
     type Position as CapacitorPosition,
     type PositionOptions as CapacitorPositionOptions,
 } from "@capacitor/geolocation";
@@ -49,6 +49,7 @@ import { DraggableMarkers } from "./DraggableMarkers";
 import { LeafletFullScreenButton } from "./LeafletFullScreenButton";
 import { MapPrint } from "./MapPrint";
 import { PolygonDraw } from "./PolygonDraw";
+import { TransitStopSelectionLayer } from "./TransitStopSelectionLayer";
 
 const getTileLayer = (tileLayer: string, thunderforestApiKey: string) => {
     switch (tileLayer) {
@@ -1039,6 +1040,7 @@ export const Map = ({ className }: { className?: string }) => {
             >
                 {getTileLayer($baseTileLayer, $thunderforestApiKey)}
                 <SpoonsGameLayers />
+                <TransitStopSelectionLayer />
                 <SpoonsLocationStatus />
                 <DraggableMarkers />
                 <div className="leaflet-top leaflet-right">

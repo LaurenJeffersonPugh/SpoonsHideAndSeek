@@ -29,7 +29,6 @@ import {
     LOCATION_FIRST_TAG,
     nearestToQuestion,
     prettifyLocation,
-    trainLineNodeFinder,
 } from "@/maps/api";
 import { holedMask, modifyMapData, safeUnion } from "@/maps/geo-utils";
 import { geoSpatialVoronoi } from "@/maps/geo-utils";
@@ -38,6 +37,11 @@ import type {
     HomeGameMatchingQuestions,
     MatchingQuestion,
 } from "@/maps/schema";
+import {
+    loadSpoonsStops,
+    spoonsStopId,
+    transitLineStopsAt,
+} from "@/maps/spoons-stops";
 
 const nearestStreetOrPathName = async (lat: number, lng: number) => {
     const radii = [100, 250, 500, 1000];
@@ -358,24 +362,22 @@ const stationName = (station: Feature<Point>) =>
         station.properties?.name ??
         "") as string;
 
-const stationRoutes = (station: Feature<Point>) =>
-    Array.isArray(station.properties?.routeIds)
-        ? (station.properties.routeIds as string[])
-        : [];
-
-const stationOsmNodeId = (station: Feature<Point>) => {
-    const value = station.properties?.osmId ?? station.properties?.id;
-    if (value === undefined || value === null) return null;
-    const id = String(value).split("/").pop();
-    return id && /^\d+$/.test(id) ? id : null;
-};
-
-const stationsShareTransitLine = (
-    stationA: Feature<Point>,
-    stationB: Feature<Point>,
+const selectedTransitLineBoundary = (
+    question: Extract<MatchingQuestion, { type: "same-train-line" }>,
 ) => {
-    const routesB = new Set(stationRoutes(stationB));
-    return stationRoutes(stationA).some((route) => routesB.has(route));
+    const selectedStops = question.selectedStops ?? [];
+    if (selectedStops.length === 0) return false;
+    return safeUnion(
+        turf.featureCollection(
+            selectedStops.map((stop) =>
+                turf.circle([stop.longitude, stop.latitude], 500, {
+                    steps: 32,
+                    units: "meters",
+                    properties: { id: stop.id, name: stop.name },
+                }),
+            ),
+        ),
+    );
 };
 
 const stationMatchingBoundary = async (question: MatchingQuestion) => {
@@ -394,30 +396,10 @@ const stationMatchingBoundary = async (question: MatchingQuestion) => {
     ) as [number, number, number, number];
     const voronoi = turf.voronoi(stations, { bbox: calculationBbox });
     const seekerNameLength = stationName(seekerStation).length;
-    let fallbackRouteNodes: Set<number> | null = null;
-    if (
-        question.type === "same-train-line" &&
-        stationRoutes(seekerStation).length === 0
-    ) {
-        const osmNodeId = stationOsmNodeId(seekerStation);
-        if (osmNodeId) {
-            fallbackRouteNodes = new Set(
-                await trainLineNodeFinder(`node/${osmNodeId}`),
-            );
-        }
-    }
     const matchingCells = voronoi.features.filter((feature) => {
         const site = turf.point(feature.properties?.coordinates ?? [0, 0], {
             ...feature.properties,
         });
-
-        if (question.type === "same-train-line") {
-            if (stationsShareTransitLine(site, seekerStation)) return true;
-            const osmNodeId = stationOsmNodeId(site);
-            return Boolean(
-                fallbackRouteNodes?.has(Number.parseInt(osmNodeId ?? "", 10)),
-            );
-        }
 
         const length = stationName(site).length;
         if (question.lengthComparison === "shorter") {
@@ -522,10 +504,11 @@ export const determineMatchingBoundary = _.memoize(
             case "park":
             case "same-first-letter-station":
                 return false;
-            case "same-length-station":
-            case "same-train-line": {
+            case "same-length-station": {
                 return stationMatchingBoundary(question);
             }
+            case "same-train-line":
+                return selectedTransitLineBoundary(question);
             case "street-path": {
                 const streetPathSamples =
                     await findStreetOrPathSamplePointsInZone();
@@ -677,6 +660,10 @@ export const determineMatchingBoundary = _.memoize(
             lng: question.lng,
             cat: question.cat,
             geo: question.geo,
+            selectedStops:
+                question.type === "same-train-line"
+                    ? question.selectedStops.map((stop) => stop.id).sort()
+                    : undefined,
             entirety: polyGeoJSON.get()
                 ? polyGeoJSON.get()
                 : mapGeoLocation.get(),
@@ -746,7 +733,6 @@ export const hiderifyMatching = async (
     if (
         question.type === "same-first-letter-station" ||
         question.type === "same-length-station" ||
-        question.type === "same-train-line" ||
         question.type === "street-path"
     ) {
         const hiderPoint = turf.point([
@@ -786,25 +772,6 @@ export const hiderifyMatching = async (
         question.hiderStationName = stationName(nearestHiderTrainStation);
         question.seekerStationName = stationName(nearestSeekerTrainStation);
 
-        if (question.type === "same-train-line") {
-            if (
-                stationRoutes(nearestHiderTrainStation).length > 0 &&
-                stationRoutes(nearestSeekerTrainStation).length > 0
-            ) {
-                question.same = stationsShareTransitLine(
-                    nearestHiderTrainStation,
-                    nearestSeekerTrainStation,
-                );
-            } else {
-                const seekerId = stationOsmNodeId(nearestSeekerTrainStation);
-                const hiderId = stationOsmNodeId(nearestHiderTrainStation);
-                if (seekerId && hiderId) {
-                    const nodes = await trainLineNodeFinder(`node/${seekerId}`);
-                    question.same = nodes.includes(Number.parseInt(hiderId));
-                }
-            }
-        }
-
         const hiderEnglishName =
             nearestHiderTrainStation.properties["name:en"] ||
             nearestHiderTrainStation.properties.name;
@@ -835,6 +802,19 @@ export const hiderifyMatching = async (
             }
         }
 
+        return question;
+    }
+
+    if (question.type === "same-train-line") {
+        const stops = await loadSpoonsStops();
+        if (stops.length === 0) return question;
+        const nearestStop = turf.nearestPoint(
+            turf.point([$hiderMode.longitude, $hiderMode.latitude]),
+            turf.featureCollection(stops),
+        );
+        const stopId = spoonsStopId(nearestStop);
+        question.hiderStationName = stationName(nearestStop);
+        question.same = transitLineStopsAt(question.selectedStops, stopId);
         return question;
     }
 

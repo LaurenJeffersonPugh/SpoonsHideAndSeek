@@ -270,7 +270,8 @@ export const DraggableMarkers = () => {
                 if (question.data.hidden) return null;
                 if (
                     question.id === "matching" &&
-                    question.data.type === "custom-zone"
+                    (question.data.type === "custom-zone" ||
+                        question.data.type === "same-train-line")
                 )
                     return null;
 

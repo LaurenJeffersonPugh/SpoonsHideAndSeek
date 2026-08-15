@@ -49,13 +49,11 @@ import {
     type CustomStation,
     findPlacesInZone,
     findTentacleLocations,
-    loadTransitStations,
     nearestToQuestion,
     normalizeToStationFeatures,
     parseCustomStationsFromText,
     type StationCircle,
     type StationPlace,
-    trainLineNodeFinder,
 } from "@/maps/api";
 import {
     extractStationLabel,
@@ -548,9 +546,27 @@ export const ZoneSidebar = () => {
 
                     if (
                         question.id === "matching" &&
+                        question.data.type === "same-train-line"
+                    ) {
+                        const selectedIds = new Set(
+                            (question.data.selectedStops ?? []).map(
+                                (stop) => stop.id,
+                            ),
+                        );
+                        circles = circles.filter((circle) => {
+                            const id = circle.properties.properties.id;
+                            const lineStopsHere = selectedIds.has(id);
+                            return question.data.same
+                                ? lineStopsHere
+                                : !lineStopsHere;
+                        });
+                        continue;
+                    }
+
+                    if (
+                        question.id === "matching" &&
                         (question.data.type === "same-first-letter-station" ||
-                            question.data.type === "same-length-station" ||
-                            question.data.type === "same-train-line")
+                            question.data.type === "same-length-station")
                     ) {
                         const location = turf.point([
                             question.data.lng,
@@ -563,87 +579,6 @@ export const ZoneSidebar = () => {
                                 circles.map((x) => x.properties),
                             ) as any,
                         );
-
-                        if (question.data.type === "same-train-line") {
-                            let usedStaticTransitData = false;
-                            try {
-                                const staticStations =
-                                    await loadTransitStations();
-                                const staticCollection =
-                                    turf.featureCollection(staticStations);
-                                const seekerStation = turf.nearestPoint(
-                                    location,
-                                    staticCollection,
-                                );
-                                const seekerRoutes = new Set<string>(
-                                    Array.isArray(
-                                        seekerStation.properties?.routeIds,
-                                    )
-                                        ? seekerStation.properties.routeIds
-                                        : [],
-                                );
-
-                                if (seekerRoutes.size > 0) {
-                                    circles = circles.filter((circle) => {
-                                        const station = turf.nearestPoint(
-                                            circle.properties,
-                                            staticCollection,
-                                        );
-                                        const routes = Array.isArray(
-                                            station.properties?.routeIds,
-                                        )
-                                            ? station.properties.routeIds
-                                            : [];
-                                        const sharesLine = routes.some(
-                                            (route: string) =>
-                                                seekerRoutes.has(route),
-                                        );
-                                        return question.data.same
-                                            ? sharesLine
-                                            : !sharesLine;
-                                    });
-                                    usedStaticTransitData = true;
-                                }
-                            } catch {
-                                // Fall through to the existing live OSM lookup.
-                            }
-
-                            if (!usedStaticTransitData) {
-                                const nid = nearestTrainStation.properties
-                                    .id as string | undefined;
-                                if (!nid || !nid.includes("/")) {
-                                    toast.warning(
-                                        "Nearest station has no OSM id; skipping 'same train line' filter.",
-                                    );
-                                    continue;
-                                }
-
-                                const nodes = await trainLineNodeFinder(nid);
-
-                                if (nodes.length === 0) {
-                                    toast.warning(
-                                        `No train line found for ${extractStationName(
-                                            nearestTrainStation,
-                                        )}`,
-                                    );
-                                    continue;
-                                } else {
-                                    circles = circles.filter((circle) => {
-                                        const idProp =
-                                            circle.properties.properties.id;
-                                        if (!idProp || !idProp.includes("/"))
-                                            return false;
-                                        const id = parseInt(
-                                            idProp.split("/")[1],
-                                        );
-
-                                        return question.data.same
-                                            ? nodes.includes(id)
-                                            : !nodes.includes(id);
-                                    });
-                                }
-                            }
-                        }
 
                         const englishName =
                             extractStationName(nearestTrainStation);

@@ -362,6 +362,7 @@ export const hidingZone = computed(
 );
 
 export const drawingQuestionKey = atom<number>(-1);
+export const transitStopSelectionQuestionKey = atom<number>(-1);
 export const planningModeEnabled = persistentAtom<boolean>(
     "planningModeEnabled",
     false,

@@ -1,10 +1,12 @@
 import { useStore } from "@nanostores/react";
+import { MapPinned } from "lucide-react";
 import * as React from "react";
 import { toast } from "react-toastify";
 
 import CustomInitDialog from "@/components/CustomInitDialog";
 import { LatitudeLongitude } from "@/components/LatLngPicker";
 import PresetsDialog from "@/components/PresetsDialog";
+import { TransitStopMultiSelect } from "@/components/TransitStopMultiSelect";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
@@ -20,6 +22,7 @@ import {
     isLoading,
     questionModified,
     questions,
+    transitStopSelectionQuestionKey,
     triggerLocalRefresh,
 } from "@/lib/context";
 import { cn } from "@/lib/utils";
@@ -28,6 +31,10 @@ import {
     findMatchingPlaces,
 } from "@/maps/questions/matching";
 import { type MatchingQuestion } from "@/maps/schema";
+import {
+    type SelectedTransitStop,
+    TRANSIT_LINE_QUESTION,
+} from "@/maps/spoons-stops";
 
 import { QuestionCard } from "./base";
 
@@ -46,12 +53,29 @@ export const MatchingQuestionComponent = ({
     const $hiderMode = useStore(hiderMode);
     const $questions = useStore(questions);
     const $drawingQuestionKey = useStore(drawingQuestionKey);
+    const $transitStopSelectionQuestionKey = useStore(
+        transitStopSelectionQuestionKey,
+    );
     const $isLoading = useStore(isLoading);
     const $customInitPref = useStore(customInitPreference);
     const [customDialogOpen, setCustomDialogOpen] = React.useState(false);
     const [pendingCustomType, setPendingCustomType] = React.useState<
         "custom-zone" | "custom-points" | null
     >(null);
+
+    React.useEffect(() => {
+        if (
+            data.type !== "same-train-line" &&
+            transitStopSelectionQuestionKey.get() === questionKey
+        ) {
+            transitStopSelectionQuestionKey.set(-1);
+        }
+        return () => {
+            if (transitStopSelectionQuestionKey.get() === questionKey) {
+                transitStopSelectionQuestionKey.set(-1);
+            }
+        };
+    }, [data.type, questionKey]);
     const label = `Matching
     ${
         $questions
@@ -75,6 +99,45 @@ export const MatchingQuestionComponent = ({
             );
             break;
         case "same-train-line":
+            questionSpecific = (
+                <div className="flex flex-col gap-2 px-2">
+                    <p className="text-sm text-muted-foreground">
+                        {TRANSIT_LINE_QUESTION}
+                    </p>
+                    <TransitStopMultiSelect
+                        selectedStops={data.selectedStops ?? []}
+                        onChange={(selectedStops: SelectedTransitStop[]) => {
+                            data.selectedStops = selectedStops;
+                            questionModified();
+                        }}
+                        disabled={!data.drag || $isLoading}
+                    />
+                    <button
+                        type="button"
+                        className={cn(
+                            "flex h-9 items-center justify-center gap-2 rounded-md border px-3 text-sm font-medium disabled:opacity-50",
+                            $transitStopSelectionQuestionKey === questionKey
+                                ? "border-blue-500 bg-blue-600 text-white"
+                                : "border-border bg-background hover:bg-accent",
+                        )}
+                        onClick={() =>
+                            transitStopSelectionQuestionKey.set(
+                                $transitStopSelectionQuestionKey === questionKey
+                                    ? -1
+                                    : questionKey,
+                            )
+                        }
+                        disabled={!data.drag || $isLoading}
+                        aria-pressed={
+                            $transitStopSelectionQuestionKey === questionKey
+                        }
+                    >
+                        <MapPinned className="h-4 w-4" />
+                        Select on map
+                    </button>
+                </div>
+            );
+            break;
         case "street-path":
             questionSpecific = (
                 <span className="px-2 text-center text-orange-500">
@@ -143,7 +206,10 @@ export const MatchingQuestionComponent = ({
                 data.collapsed = collapsed; // Doesn't trigger a re-render so no need for questionModified
             }}
             locked={!data.drag}
-            setLocked={(locked) => questionModified((data.drag = !locked))}
+            setLocked={(locked) => {
+                if (locked) transitStopSelectionQuestionKey.set(-1);
+                questionModified((data.drag = !locked));
+            }}
             hidden={data.hidden}
             setHidden={(hidden) => questionModified((data.hidden = !hidden))}
         >
@@ -289,6 +355,20 @@ export const MatchingQuestionComponent = ({
                             data.same = true;
                         }
 
+                        if (value === "same-train-line") {
+                            (
+                                data as Extract<
+                                    MatchingQuestion,
+                                    { type: "same-train-line" }
+                                >
+                            ).selectedStops ??= [];
+                        } else if (
+                            transitStopSelectionQuestionKey.get() ===
+                            questionKey
+                        ) {
+                            transitStopSelectionQuestionKey.set(-1);
+                        }
+
                         // The category should be defined such that no error is thrown if this is a zone question.
                         if (!(data as any).cat) {
                             (data as any).cat = { adminLevel: 8 };
@@ -300,7 +380,7 @@ export const MatchingQuestionComponent = ({
             </SidebarMenuItem>
             {questionSpecific}
 
-            {data.type !== "custom-zone" && (
+            {data.type !== "custom-zone" && data.type !== "same-train-line" && (
                 <LatitudeLongitude
                     latitude={data.lat}
                     longitude={data.lng}
@@ -384,9 +464,13 @@ export const MatchingQuestionComponent = ({
                         disabled={!!$hiderMode || !data.drag || $isLoading}
                     >
                         <ToggleGroupItem value="different">
-                            Different
+                            {data.type === "same-train-line"
+                                ? "No"
+                                : "Different"}
                         </ToggleGroupItem>
-                        <ToggleGroupItem value="same">Same</ToggleGroupItem>
+                        <ToggleGroupItem value="same">
+                            {data.type === "same-train-line" ? "Yes" : "Same"}
+                        </ToggleGroupItem>
                     </ToggleGroup>
                 )}
             </div>

@@ -334,57 +334,6 @@ export const fetchCoastline = async () => {
     return data;
 };
 
-export const trainLineNodeFinder = async (node: string): Promise<number[]> => {
-    const nodeId = node.split("/")[1];
-    const tagQuery = `
-[out:json];
-node(${nodeId});
-wr(bn);
-out tags;
-`;
-    const tagData = await getOverpassData(tagQuery, "Finding train line...");
-    const query = `
-[out:json];
-(
-${tagData.elements
-    .map((element: any) => {
-        if (
-            !element.tags.name &&
-            !element.tags["name:en"] &&
-            !element.tags.network
-        )
-            return "";
-        let query = "";
-        if (element.tags.name) query += `wr["name"="${element.tags.name}"];`;
-        if (element.tags["name:en"])
-            query += `wr["name:en"="${element.tags["name:en"]}"];`;
-        if (element.tags["network"])
-            query += `wr["network"="${element.tags["network"]}"];`;
-        return query;
-    })
-    .join("\n")}
-);
-out geom;
-`;
-    const data = await getOverpassData(query, "Finding train lines...");
-    const geoJSON = osmtogeojson(data);
-    const nodes: number[] = [];
-    geoJSON.features.forEach((feature: any) => {
-        if (feature && feature.id && feature.id.startsWith("node")) {
-            nodes.push(parseInt(feature.id.split("/")[1]));
-        }
-    });
-    data.elements.forEach((element: any) => {
-        if (element && element.type === "node") {
-            nodes.push(element.id);
-        } else if (element && element.type === "way") {
-            nodes.push(...element.nodes);
-        }
-    });
-    const uniqNodes = _.uniq(nodes);
-    return uniqNodes;
-};
-
 export const findPlacesInZone = async (
     filter: string,
     loadingText?: string,
