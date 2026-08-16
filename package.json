@@ -15,6 +15,7 @@
         "generate:admin-districts": "node scripts/generate-admin-districts.mjs",
         "generate:international-borders": "node scripts/generate-question-data.mjs --international-border-only",
         "generate:terrain": "node scripts/generate-terrain-data.mjs",
+        "generate:body-water": "node scripts/generate-question-data.mjs --water-only",
         "generate:water-distance": "node scripts/generate-water-distance-data.mjs",
         "generate:question-data": "node scripts/generate-question-data.mjs",
         "cap:sync": "cross-env CAPACITOR=1 astro build && cap sync android",

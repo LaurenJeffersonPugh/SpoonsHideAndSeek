@@ -49,6 +49,7 @@ import {
     waterCloserThanReferencePolygon,
     waterDistanceMeters,
 } from "@/maps/water-distance";
+import { isEligibleBodyOfWater } from "@/maps/water-features";
 
 const osmTagForLocation = (location: APILocations) => {
     if (location === "amusement_park") {
@@ -674,7 +675,9 @@ export const determineMeasuringBoundary = async (
             ];
         case "body-water": {
             try {
-                const features = await staticMeasuringFeatures("body-water");
+                const features = (
+                    await staticMeasuringFeatures("body-water")
+                ).filter(isEligibleBodyOfWater);
                 if (features.length > 0) return features;
             } catch {
                 // Fall through to live OSM data.
@@ -693,7 +696,11 @@ export const determineMeasuringBoundary = async (
                 ],
                 60,
             );
-            return featureLines(osmtogeojson(data).features as Feature[]);
+            return featureLines(
+                (osmtogeojson(data).features as Feature[]).filter(
+                    isEligibleBodyOfWater,
+                ),
+            );
         }
         case "zoo_aquarium-full":
         case "amusement_park-full":

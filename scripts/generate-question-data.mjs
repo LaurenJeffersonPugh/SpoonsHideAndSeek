@@ -34,6 +34,7 @@ const UK_NATION_RELATION_IDS = {
 const elevationOnly = process.argv.includes("--elevation-only");
 const osmOnly = process.argv.includes("--osm-only");
 const transitOnly = process.argv.includes("--transit-only");
+const waterOnly = process.argv.includes("--water-only");
 const internationalBorderOnly = process.argv.includes(
     "--international-border-only",
 );
@@ -198,6 +199,79 @@ const writeGeoJson = async (filePath, features) => {
     );
 };
 
+const MINIMUM_UNNAMED_LAKE_POND_AREA_SQUARE_METERS = 500;
+
+const bodyOfWaterAreaSquareMeters = (feature) => {
+    if (
+        feature.geometry?.type !== "Polygon" &&
+        feature.geometry?.type !== "MultiPolygon"
+    ) {
+        return null;
+    }
+    return turf.area(feature);
+};
+
+const isEligibleBodyOfWater = (feature) => {
+    const name = String(featureName(feature.properties) ?? "").trim();
+    if (name) return true;
+
+    const water = String(feature.properties?.water ?? "").toLowerCase();
+    const isLakeOrPond =
+        water === "lake" ||
+        water === "pond" ||
+        (feature.properties?.natural === "water" && water === "");
+    if (!isLakeOrPond) return false;
+
+    const area = bodyOfWaterAreaSquareMeters(feature);
+    return (
+        area !== null && area >= MINIMUM_UNNAMED_LAKE_POND_AREA_SQUARE_METERS
+    );
+};
+
+const generateBodyWaterData = async () => {
+    console.log("Fetching static body-of-water geometry...");
+    const waterData = await fetchOverpass(
+        "bodies of water",
+        `[out:json][timeout:240];
+(
+  nwr["natural"="water"](${bbox});
+  nwr["water"~"^(lake|pond|reservoir)$"](${bbox});
+  way["waterway"~"^(river|canal|stream)$"](${bbox});
+);
+out geom tags;`,
+    );
+    const candidates =
+        osmtogeojson(waterData).features.filter(withinClipRegion);
+    const eligibleFeatures = candidates.filter(isEligibleBodyOfWater);
+    const waterFeatures = eligibleFeatures.map((feature) => {
+        const areaSquareMeters = bodyOfWaterAreaSquareMeters(feature);
+        return {
+            ...feature,
+            properties: {
+                name: featureName(feature.properties) ?? undefined,
+                natural: feature.properties?.natural,
+                water: feature.properties?.water,
+                waterway: feature.properties?.waterway,
+                areaSquareMeters:
+                    areaSquareMeters === null
+                        ? undefined
+                        : Math.round(areaSquareMeters),
+            },
+        };
+    });
+    const namedCount = waterFeatures.filter((feature) =>
+        Boolean(feature.properties.name),
+    ).length;
+    console.log(
+        `  kept ${waterFeatures.length} of ${candidates.length} water features (${namedCount} named, ${waterFeatures.length - namedCount} qualifying unnamed lakes/ponds)`,
+    );
+    await writeGeoJson(
+        path.join(measuringDir, "body-water.geojson"),
+        waterFeatures,
+    );
+    await generateWaterDistanceData();
+};
+
 const fetchOsmRelation = async (id) => {
     const response = await fetch(
         `https://api.openstreetmap.org/api/0.6/relation/${id}.json`,
@@ -289,6 +363,12 @@ const generateInternationalBorders = async () => {
 if (internationalBorderOnly) {
     await generateInternationalBorders();
     console.log("Static land international-border generation complete.");
+    process.exit(0);
+}
+
+if (waterOnly) {
+    await generateBodyWaterData();
+    console.log("Static body-of-water generation complete.");
     process.exit(0);
 }
 
@@ -613,31 +693,7 @@ out body geom;`,
 
     await generateInternationalBorders();
 
-    console.log("Fetching static body-of-water geometry...");
-    const waterData = await fetchOverpass(
-        "bodies of water",
-        `[out:json][timeout:240];
-(
-  nwr["natural"="water"](${bbox});
-  nwr["water"~"^(lake|reservoir)$"](${bbox});
-  way["waterway"~"^(river|canal|stream)$"](${bbox});
-);
-out geom tags;`,
-    );
-    const waterFeatures = osmtogeojson(waterData)
-        .features.filter(withinClipRegion)
-        .map((feature) => ({
-            ...feature,
-            properties: {
-                name:
-                    featureName(feature.properties) ?? "Unnamed body of water",
-            },
-        }));
-    await writeGeoJson(
-        path.join(measuringDir, "body-water.geojson"),
-        waterFeatures,
-    );
-    await generateWaterDistanceData();
+    await generateBodyWaterData();
 }
 
 if (osmOnly) {
