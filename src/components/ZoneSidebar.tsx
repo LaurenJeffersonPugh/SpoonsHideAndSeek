@@ -9,7 +9,7 @@ import type {
 } from "geojson";
 import * as L from "leaflet";
 import _ from "lodash";
-import { SidebarCloseIcon } from "lucide-react";
+import { RotateCcw, SidebarCloseIcon } from "lucide-react";
 import osmtogeojson from "osmtogeojson";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "react-toastify";
@@ -1083,41 +1083,60 @@ export const ZoneSidebar = () => {
                                 <SidebarMenuItem
                                     className={cn(
                                         MENU_ITEM_CLASSNAME,
-                                        "bg-popover hover:bg-accent",
+                                        "flex items-center justify-between gap-2 bg-popover hover:bg-accent",
                                     )}
                                     disabled={$isLoading}
                                 >
-                                    Current:{" "}
-                                    {(() => {
-                                        const selected = stations.find(
-                                            (x) =>
-                                                x.properties.properties.id ===
-                                                hidingZoneModeStationID,
-                                        );
-                                        const displayName = extractStationLabel(
-                                            selected?.properties,
-                                        );
-                                        const id = selected?.properties
-                                            .properties.id as string;
-                                        const coords = selected?.properties
-                                            .geometry.coordinates as [
-                                            number,
-                                            number,
-                                        ];
-                                        const href = id?.includes("/")
-                                            ? `https://www.openstreetmap.org/${id}`
-                                            : `https://www.openstreetmap.org/?mlat=${coords[1]}&mlon=${coords[0]}#map=17/${coords[1]}/${coords[0]}`;
-                                        return (
-                                            <a
-                                                href={href}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                className="text-blue-500"
-                                            >
-                                                {displayName}
-                                            </a>
-                                        );
-                                    })()}
+                                    <div className="min-w-0 text-sm">
+                                        Current:{" "}
+                                        {(() => {
+                                            const selected = stations.find(
+                                                (x) =>
+                                                    x.properties.properties
+                                                        .id ===
+                                                    hidingZoneModeStationID,
+                                            );
+                                            if (!selected) return "Unknown";
+
+                                            const displayName =
+                                                extractStationLabel(
+                                                    selected.properties,
+                                                );
+                                            const id = selected.properties
+                                                .properties.id as string;
+                                            const coords = selected.properties
+                                                .geometry.coordinates as [
+                                                number,
+                                                number,
+                                            ];
+                                            const href = id.includes("/")
+                                                ? `https://www.openstreetmap.org/${id}`
+                                                : `https://www.openstreetmap.org/?mlat=${coords[1]}&mlon=${coords[0]}#map=17/${coords[1]}/${coords[0]}`;
+                                            return (
+                                                <a
+                                                    href={href}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className="break-words text-blue-500"
+                                                >
+                                                    {displayName}
+                                                </a>
+                                            );
+                                        })()}
+                                    </div>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="shrink-0"
+                                        onClick={() =>
+                                            setHidingZoneModeStationID("")
+                                        }
+                                        disabled={$isLoading}
+                                    >
+                                        <RotateCcw aria-hidden="true" />
+                                        Reset zone
+                                    </Button>
                                 </SidebarMenuItem>
                             )}
                             {$displayHidingZones &&
