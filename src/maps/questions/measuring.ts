@@ -23,12 +23,8 @@ import {
     prettifyLocation,
 } from "@/maps/api";
 import { relevantDistanceLines } from "@/maps/distance-lines";
-import {
-    arcBufferToPoint,
-    holedMask,
-    modifyMapData,
-    safeUnion,
-} from "@/maps/geo-utils";
+import { nearestFeatureDistancesMeters } from "@/maps/feature-distance";
+import { arcBufferToPoint, modifyMapData, safeUnion } from "@/maps/geo-utils";
 import {
     qualifiesAsHighSpeedRail,
     qualifiesAsHighSpeedTrainService,
@@ -229,6 +225,17 @@ const staticMeasuringFeatures = _.memoize(
     async (type: Parameters<typeof loadStaticMeasuringData>[0]) =>
         loadStaticMeasuringData<Geometry>(type),
 );
+
+const coastlineFeatures = _.memoize(async (): Promise<Feature<Geometry>[]> => {
+    try {
+        const features = await staticMeasuringFeatures("coastline");
+        if (features.length > 0) return features;
+    } catch {
+        // Fall through to the bundled global coastline file.
+    }
+    const coastline = await fetchCoastline();
+    return coastline.features as Feature<Geometry>[];
+});
 
 export const findMeasuringTransitStations = _.memoize(
     async (): Promise<Feature<Point>[]> => {
@@ -554,8 +561,6 @@ const bboxExtension = (
 export const determineMeasuringBoundary = async (
     question: MeasuringQuestion,
 ) => {
-    const bBox = turf.bbox(mapGeoJSON.get()!);
-
     switch (question.type) {
         case "highspeed-measure-shinkansen": {
             try {
@@ -609,8 +614,9 @@ export const determineMeasuringBoundary = async (
                 : [boundaryLines];
         }
         case "coastline": {
+            const bBox = turf.bbox(mapGeoJSON.get()!);
             const coastline = turf.lineToPolygon(
-                await fetchCoastline(),
+                turf.featureCollection(await coastlineFeatures()),
             ) as Feature<MultiPolygon>;
 
             const distanceToCoastline = turf.pointToPolygonDistance(
@@ -958,31 +964,25 @@ export const hiderifyMeasuring = async (
             // Fall through to the static geometry/live-data fallback below.
         }
     }
-
-    const $mapGeoJSON = mapGeoJSON.get();
-    if ($mapGeoJSON === null) return question;
-
-    let feature = null;
-
     try {
-        feature = holedMask((await adjustPerMeasuring(question, $mapGeoJSON))!);
-    } catch {
-        try {
-            feature = await adjustPerMeasuring(question, {
-                type: "FeatureCollection",
-                features: [holedMask($mapGeoJSON)],
-            });
-        } catch {
-            return question;
+        const targets =
+            question.type === "coastline"
+                ? await coastlineFeatures()
+                : await determineMeasuringBoundary(question);
+        if (targets === false || targets === undefined) return question;
+
+        const [seekerDistance, hiderDistance] = nearestFeatureDistancesMeters(
+            targets as Feature<Geometry>[],
+            [
+                [question.lng, question.lat],
+                [$hiderMode.longitude, $hiderMode.latitude],
+            ],
+        );
+        if (Number.isFinite(seekerDistance) && Number.isFinite(hiderDistance)) {
+            question.hiderCloser = hiderDistance < seekerDistance;
         }
-    }
-
-    if (feature === null || feature === undefined) return question;
-
-    const hiderPoint = turf.point([$hiderMode.longitude, $hiderMode.latitude]);
-
-    if (turf.booleanPointInPolygon(hiderPoint, feature)) {
-        question.hiderCloser = !question.hiderCloser;
+    } catch {
+        return question;
     }
 
     return question;

@@ -39,21 +39,9 @@ export const hiderifyThermometer = (
     const pointA = turf.point([question.lngA, question.latA]);
     const pointB = turf.point([question.lngB, question.latB]);
 
-    const voronoi = geoSpatialVoronoi(turf.featureCollection([pointA, pointB]));
-
     const hiderPoint = turf.point([$hiderMode.longitude, $hiderMode.latitude]);
-    const hiderRegion = turf.booleanPointInPolygon(
-        hiderPoint,
-        voronoi.features[1],
-    )
-        ? 1
-        : 0;
-
-    if (hiderRegion === 1) {
-        question.warmer = true;
-    } else {
-        question.warmer = false;
-    }
+    question.warmer =
+        turf.distance(hiderPoint, pointB) < turf.distance(hiderPoint, pointA);
 
     return question;
 };

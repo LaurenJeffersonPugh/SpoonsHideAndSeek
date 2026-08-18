@@ -30,8 +30,12 @@ import {
     nearestToQuestion,
     prettifyLocation,
 } from "@/maps/api";
-import { holedMask, modifyMapData, safeUnion } from "@/maps/geo-utils";
-import { geoSpatialVoronoi } from "@/maps/geo-utils";
+import {
+    geoSpatialVoronoi,
+    holedMask,
+    modifyMapData,
+    safeUnion,
+} from "@/maps/geo-utils";
 import type {
     APILocations,
     HomeGameMatchingQuestions,
@@ -42,6 +46,7 @@ import {
     spoonsStopId,
     transitLineStopsAt,
 } from "@/maps/spoons-stops";
+import { nearestStreetPathNameFromStaticIndex } from "@/maps/street-path-index";
 
 const nearestStreetOrPathName = async (lat: number, lng: number) => {
     const radii = [100, 250, 500, 1000];
@@ -312,6 +317,12 @@ const findStreetOrPathSamplePointsInZone = _.memoize(
 );
 
 const nearestStreetOrPathNameInZone = async (lat: number, lng: number) => {
+    try {
+        return await nearestStreetPathNameFromStaticIndex(lat, lng);
+    } catch {
+        // Fall through to the GeoJSON and live-data compatibility paths.
+    }
+
     const streetPathSamples = await findStreetOrPathSamplePointsInZone();
     if (streetPathSamples.features.length === 0) {
         return nearestStreetOrPathName(lat, lng);

@@ -3,6 +3,8 @@ import path from "node:path";
 
 import * as turf from "@turf/turf";
 
+import { generateStreetPathIndex } from "./generate-street-path-index.mjs";
+
 const OVERPASS_ENDPOINTS = [
     "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
@@ -130,9 +132,7 @@ for (const element of data.elements ?? []) {
     if (!name || !Array.isArray(element.geometry)) continue;
 
     const coordinates = element.geometry
-        .map((coordinate) =>
-            roundCoordinates([coordinate.lon, coordinate.lat]),
-        )
+        .map((coordinate) => roundCoordinates([coordinate.lon, coordinate.lat]))
         .filter(
             (coordinate) =>
                 typeof coordinate[0] === "number" &&
@@ -230,6 +230,7 @@ await fs.writeFile(
         features: lineFeatures,
     })}\n`,
 );
+await generateStreetPathIndex();
 
 console.log(
     `Done. Wrote ${features.length} street/path sample points to ${path.relative(

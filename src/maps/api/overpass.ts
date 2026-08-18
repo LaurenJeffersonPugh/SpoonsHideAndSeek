@@ -83,23 +83,43 @@ const poiDataUrl = (location: string) =>
 const localDataUrl = (path: string) =>
     `${import.meta.env.BASE_URL.replace(/\/?$/, "/")}data/${path}`;
 
-const loadLocalFeatureCollection = async <G extends Geometry>(
+const localFeatureCollectionPromises = new Map<
+    string,
+    Promise<Feature<Geometry>[]>
+>();
+
+const fetchLocalFeatureCollection = async (
     path: string,
-): Promise<Feature<G>[]> => {
+): Promise<Feature<Geometry>[]> => {
     const response = await fetch(localDataUrl(path));
     if (!response.ok) {
         throw new Error(
             `Failed to load static question data ${path}: ${response.status} ${response.statusText}`,
         );
     }
-    const geo = (await response.json()) as FeatureCollection<G>;
+    const geo = (await response.json()) as FeatureCollection<Geometry>;
     return geo.features;
+};
+
+const loadLocalFeatureCollection = <G extends Geometry>(
+    path: string,
+): Promise<Feature<G>[]> => {
+    let promise = localFeatureCollectionPromises.get(path);
+    if (!promise) {
+        promise = fetchLocalFeatureCollection(path).catch((error) => {
+            localFeatureCollectionPromises.delete(path);
+            throw error;
+        });
+        localFeatureCollectionPromises.set(path, promise);
+    }
+    return promise as Promise<Feature<G>[]>;
 };
 
 export type StaticMeasuringData =
     | "airports"
     | "high-speed-rail-lines"
     | "international-borders"
+    | "coastline"
     | "body-water"
     | "elevation-grid";
 
@@ -116,7 +136,12 @@ export const loadTransitStations = async () =>
  * questions so they don't hammer the public Overpass API at runtime. Throws if
  * the dataset is missing, letting callers fall back to a live Overpass query.
  */
-export const loadPregeneratedPois = async (
+const pregeneratedPoiPromises = new Map<
+    APILocations,
+    Promise<Feature<Point>[]>
+>();
+
+const fetchPregeneratedPois = async (
     location: APILocations,
 ): Promise<Feature<Point>[]> => {
     if (location === "zoo_aquarium") {
@@ -139,10 +164,19 @@ export const loadPregeneratedPois = async (
     return geo.features;
 };
 
-const adminBoundaryUrl = (adminLevel: 8 | 10) =>
-    `${import.meta.env.BASE_URL.replace(/\/?$/, "/")}data/${
-        adminLevel === 8 ? "admin-councils" : "admin-districts"
-    }.geojson`;
+export const loadPregeneratedPois = (
+    location: APILocations,
+): Promise<Feature<Point>[]> => {
+    let promise = pregeneratedPoiPromises.get(location);
+    if (!promise) {
+        promise = fetchPregeneratedPois(location).catch((error) => {
+            pregeneratedPoiPromises.delete(location);
+            throw error;
+        });
+        pregeneratedPoiPromises.set(location, promise);
+    }
+    return promise;
+};
 
 /**
  * Loads the pre-generated local administration-district boundaries (see
@@ -150,20 +184,12 @@ const adminBoundaryUrl = (adminLevel: 8 | 10) =>
  * district?" matching question. adminLevel 8 = councils (the 5 Tyne & Wear
  * boroughs), 10 = districts (electoral wards). Runs offline; no Overpass.
  */
-export const loadAdminBoundaries = async (
+export const loadAdminBoundaries = (
     adminLevel: 8 | 10,
-): Promise<Feature<Polygon | MultiPolygon>[]> => {
-    const response = await fetch(adminBoundaryUrl(adminLevel));
-    if (!response.ok) {
-        throw new Error(
-            `Failed to load admin boundaries for level ${adminLevel}: ${response.status} ${response.statusText}`,
-        );
-    }
-    const geo = (await response.json()) as FeatureCollection<
-        Polygon | MultiPolygon
-    >;
-    return geo.features;
-};
+): Promise<Feature<Polygon | MultiPolygon>[]> =>
+    loadLocalFeatureCollection<Polygon | MultiPolygon>(
+        adminLevel === 8 ? "admin-councils.geojson" : "admin-districts.geojson",
+    );
 
 export const loadStreetPathSamples = async (): Promise<Feature<Point>[]> => {
     return loadLocalFeatureCollection<Point>("street-path-samples.geojson");
@@ -324,7 +350,7 @@ out geom;
     return geo.features?.[0];
 };
 
-export const fetchCoastline = async () => {
+export const fetchCoastline = _.memoize(async () => {
     const response = await cacheFetch(
         import.meta.env.BASE_URL + "/coastline50.geojson",
         "Fetching coastline data...",
@@ -332,7 +358,7 @@ export const fetchCoastline = async () => {
     );
     const data = await response.json();
     return data;
-};
+});
 
 export const findPlacesInZone = async (
     filter: string,
@@ -480,6 +506,26 @@ export const findPlacesSpecificInZone = async (
 export const nearestToQuestion = async (
     question: HomeGameMatchingQuestions | HomeGameMeasuringQuestions,
 ) => {
+    const questionPoint = turf.point([question.lng, question.lat]);
+    try {
+        const staticInstances = await loadPregeneratedPois(
+            question.type as APILocations,
+        );
+        if (staticInstances.length > 0) {
+            const nearest = turf.nearestPoint(
+                questionPoint,
+                turf.featureCollection(staticInstances),
+            );
+            nearest.properties.distanceToPoint = turf.distance(
+                questionPoint,
+                nearest,
+            );
+            return nearest;
+        }
+    } catch {
+        // Fall back to the progressively wider live-data search below.
+    }
+
     let radius = 30;
     let instances: any = { features: [] };
     while (instances.features.length === 0) {
@@ -500,7 +546,6 @@ export const nearestToQuestion = async (
         );
         radius += 30;
     }
-    const questionPoint = turf.point([question.lng, question.lat]);
     return turf.nearestPoint(questionPoint, instances as any);
 };
 

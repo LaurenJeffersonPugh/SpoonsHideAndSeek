@@ -14,6 +14,7 @@ const OVERPASS_ENDPOINTS = [
     "https://overpass.private.coffee/api/interpreter",
 ];
 const BUFFER_MILES = 16;
+const REGIONAL_LINE_BUFFER_MILES = 100;
 const ELEVATION_GRID_DEGREES = 0.02;
 const ELEVATION_BATCH_SIZE = 100;
 const ELEVATION_BATCH_DELAY_MS = 6000;
@@ -38,6 +39,10 @@ const waterOnly = process.argv.includes("--water-only");
 const internationalBorderOnly = process.argv.includes(
     "--international-border-only",
 );
+const coastlineOnly = process.argv.includes("--coastline-only");
+const optimizeRegionalLinesOnly = process.argv.includes(
+    "--optimize-regional-lines-only",
+);
 
 const root = process.cwd();
 const dataDir = path.join(root, "public", "data");
@@ -48,6 +53,11 @@ const boundary = JSON.parse(
 const clipRegion = turf.buffer(boundary.features[0], BUFFER_MILES, {
     units: "miles",
 });
+const regionalLineRegion = turf.buffer(
+    boundary.features[0],
+    REGIONAL_LINE_BUFFER_MILES,
+    { units: "miles" },
+);
 const [west, south, east, north] = turf.bbox(clipRegion);
 const bbox = `${south},${west},${north},${east}`;
 const center = turf.center(boundary).geometry.coordinates;
@@ -189,6 +199,14 @@ const withinClipRegion = (feature) => {
     }
 };
 
+const withinRegionalLineRegion = (feature) => {
+    try {
+        return turf.booleanIntersects(feature, regionalLineRegion);
+    } catch {
+        return false;
+    }
+};
+
 const writeGeoJson = async (filePath, features) => {
     await fs.writeFile(
         filePath,
@@ -196,6 +214,29 @@ const writeGeoJson = async (filePath, features) => {
     );
     console.log(
         `  ${path.relative(root, filePath)}: ${features.length} features`,
+    );
+};
+
+const generateLocalCoastline = async () => {
+    console.log("Building regional static coastline data...");
+    const source = JSON.parse(
+        await fs.readFile(
+            path.join(root, "public", "coastline50.geojson"),
+            "utf8",
+        ),
+    );
+    const coastline = lineFeatures(source.features).filter(
+        withinRegionalLineRegion,
+    );
+    await writeGeoJson(path.join(measuringDir, "coastline.geojson"), coastline);
+};
+
+const optimizeExistingInternationalBorders = async () => {
+    const filePath = path.join(measuringDir, "international-borders.geojson");
+    const source = JSON.parse(await fs.readFile(filePath, "utf8"));
+    await writeGeoJson(
+        filePath,
+        lineFeatures(source.features).filter(withinRegionalLineRegion),
     );
 };
 
@@ -356,9 +397,24 @@ const generateInternationalBorders = async () => {
     internationalBorders.push(...(await generateUkNationBorders()));
     await writeGeoJson(
         path.join(measuringDir, "international-borders.geojson"),
-        internationalBorders,
+        internationalBorders.filter(withinRegionalLineRegion),
     );
 };
+
+if (optimizeRegionalLinesOnly) {
+    await Promise.all([
+        generateLocalCoastline(),
+        optimizeExistingInternationalBorders(),
+    ]);
+    console.log("Regional static line optimization complete.");
+    process.exit(0);
+}
+
+if (coastlineOnly) {
+    await generateLocalCoastline();
+    console.log("Static coastline generation complete.");
+    process.exit(0);
+}
 
 if (internationalBorderOnly) {
     await generateInternationalBorders();
@@ -692,6 +748,8 @@ out body geom;`,
     }
 
     await generateInternationalBorders();
+
+    await generateLocalCoastline();
 
     await generateBodyWaterData();
 }

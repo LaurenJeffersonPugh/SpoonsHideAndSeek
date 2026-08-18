@@ -98,6 +98,17 @@ export const hiderifyTentacles = async (
         return question;
     }
 
+    const hider = turf.point([$hiderMode.longitude, $hiderMode.latitude]);
+    const location = turf.point([question.lng, question.lat]);
+
+    if (
+        turf.distance(hider, location, { units: question.unit }) >
+        question.radius
+    ) {
+        question.location = false;
+        return question;
+    }
+
     const rawPoints =
         question.locationType === "custom"
             ? turf.featureCollection(question.places)
@@ -114,38 +125,12 @@ export const hiderifyTentacles = async (
               )
             : rawPoints;
 
-    const voronoi = geoSpatialVoronoi(points);
-
-    const hider = turf.point([$hiderMode.longitude, $hiderMode.latitude]);
-    const location = turf.point([question.lng, question.lat]);
-
-    if (
-        turf.distance(hider, location, { units: question.unit }) >
-        question.radius
-    ) {
+    if (points.features.length === 0) {
         question.location = false;
         return question;
     }
 
-    let correctLocation: any = null;
-
-    const correctPolygon = voronoi.features.find(
-        (feature: any, index: number) => {
-            const pointIn =
-                turf.booleanPointInPolygon(hider, feature.geometry) || false;
-
-            if (pointIn) {
-                correctLocation = points.features[index];
-            }
-            return pointIn;
-        },
-    );
-
-    if (!correctPolygon) {
-        return question;
-    }
-
-    question.location = correctLocation!;
+    question.location = turf.nearestPoint(hider, points);
     return question;
 };
 

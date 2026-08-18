@@ -123,6 +123,22 @@ const TENTACLE_CATEGORY_OPTIONS = CATEGORY_OPTIONS.filter((option) =>
     ),
 );
 
+const HIDER_NEAREST_POI_CATEGORIES = new Set([
+    "theme_park",
+    "hospital",
+    "cinema",
+    "museum",
+    "library",
+    "park",
+    "golf_course",
+    "zoo_aquarium",
+    "peak",
+    "amusement_park-full",
+]);
+
+const poiCategory = (category: string) =>
+    category.endsWith("-full") ? category.slice(0, -5) : category;
+
 const inputClass =
     "w-full rounded border border-white/20 bg-black/30 px-2 py-1 text-sm text-white";
 const labelClass = "text-xs text-white/70";
@@ -308,8 +324,7 @@ export const HiderSidebar = () => {
         if (
             !isCategory ||
             !hiderLoc ||
-            (type === "measuring" && category === "rail-measure") ||
-            (type === "matching" && category === "same-train-line")
+            !HIDER_NEAREST_POI_CATEGORIES.has(category)
         ) {
             setNearest(null);
             return;
@@ -318,7 +333,7 @@ export const HiderSidebar = () => {
         void (async () => {
             try {
                 const features = await loadPregeneratedPois(
-                    category as APILocations,
+                    poiCategory(category) as APILocations,
                 );
                 const hider = turf.point([
                     hiderLoc.longitude,
@@ -395,6 +410,7 @@ export const HiderSidebar = () => {
         if (!hiderLoc || !type) return;
         setComputing(true);
         setAnswer(null);
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
         try {
             const base = {
                 drag: true,
