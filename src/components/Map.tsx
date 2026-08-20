@@ -25,6 +25,7 @@ import {
     animateMapMovements,
     autoZoom,
     baseTileLayer,
+    consumeQuestionRefreshFocus,
     followMe,
     hiderMode,
     isLoading,
@@ -1070,7 +1071,7 @@ export const Map = ({ className }: { className?: string }) => {
     useEffect(() => {
         if (!map) return;
 
-        refreshQuestions(true);
+        refreshQuestions(consumeQuestionRefreshFocus());
     }, [$questions, map, $hiderMode]);
 
     useEffect(() => {

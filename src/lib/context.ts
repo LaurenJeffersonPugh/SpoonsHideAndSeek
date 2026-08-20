@@ -114,6 +114,8 @@ export const questions = persistentAtom<Questions>("questions", [], {
     encode: JSON.stringify,
     decode: decodeQuestions,
 });
+let focusNextQuestionRefresh = true;
+
 export const addQuestion = (question: DeepPartial<Question>) =>
     questionModified(questions.get().push(questionSchema.parse(question)));
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -123,6 +125,17 @@ export const questionModified = (..._: any[]) => {
     } else {
         triggerLocalRefresh.set(Math.random());
     }
+};
+
+export const questionMarkerMoved = () => {
+    if (autoSave.get()) focusNextQuestionRefresh = false;
+    questionModified();
+};
+
+export const consumeQuestionRefreshFocus = () => {
+    const focus = focusNextQuestionRefresh;
+    focusNextQuestionRefresh = true;
+    return focus;
 };
 
 export const leafletMapContext = atom<Map | null>(null);
