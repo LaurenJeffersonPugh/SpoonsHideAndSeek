@@ -24,11 +24,18 @@ export type WaterDistanceMetadata = {
     crs: "EPSG:27700";
     source: string;
     attribution: string;
+    featureNames?: string[];
 };
 
 export type WaterDistanceGrid = {
     metadata: WaterDistanceMetadata;
     values: Uint16Array;
+    nearestFeatureIds?: Uint16Array;
+};
+
+export type NearestBodyOfWater = {
+    name: string;
+    distanceMeters: number;
 };
 
 const localWaterDataUrl = (fileName: string) =>
@@ -36,10 +43,12 @@ const localWaterDataUrl = (fileName: string) =>
 
 export const loadWaterDistanceGrid = _.memoize(
     async (): Promise<WaterDistanceGrid> => {
-        const [metadataResponse, valuesResponse] = await Promise.all([
-            fetch(localWaterDataUrl("body-water-distance.json")),
-            fetch(localWaterDataUrl("body-water-distance.bin")),
-        ]);
+        const [metadataResponse, valuesResponse, nearestResponse] =
+            await Promise.all([
+                fetch(localWaterDataUrl("body-water-distance.json")),
+                fetch(localWaterDataUrl("body-water-distance.bin")),
+                fetch(localWaterDataUrl("body-water-nearest.bin")),
+            ]);
         if (!metadataResponse.ok || !valuesResponse.ok) {
             throw new Error(
                 "Could not load static body-of-water distance data",
@@ -48,12 +57,23 @@ export const loadWaterDistanceGrid = _.memoize(
         const metadata =
             (await metadataResponse.json()) as WaterDistanceMetadata;
         const values = new Uint16Array(await valuesResponse.arrayBuffer());
+        const nearestFeatureIds = nearestResponse.ok
+            ? new Uint16Array(await nearestResponse.arrayBuffer())
+            : undefined;
         if (values.length !== metadata.width * metadata.height) {
             throw new Error(
                 "Static body-of-water distance data has an unexpected size",
             );
         }
-        return { metadata, values };
+        if (
+            nearestFeatureIds &&
+            nearestFeatureIds.length !== metadata.width * metadata.height
+        ) {
+            throw new Error(
+                "Static nearest-body-of-water data has an unexpected size",
+            );
+        }
+        return { metadata, values, nearestFeatureIds };
     },
 );
 
@@ -123,6 +143,42 @@ export const waterDistanceMeters = (
             0,
         ) / totalWeight
     );
+};
+
+export const nearestBodyOfWater = (
+    grid: WaterDistanceGrid,
+    latitude: number,
+    longitude: number,
+): NearestBodyOfWater | null => {
+    const distanceMeters = waterDistanceMeters(grid, latitude, longitude);
+    if (distanceMeters === null) return null;
+
+    const { metadata, nearestFeatureIds } = grid;
+    if (!nearestFeatureIds) {
+        return { name: "Unknown body of water", distanceMeters };
+    }
+    const [easting, northing] = proj4("EPSG:4326", metadata.crs, [
+        longitude,
+        latitude,
+    ]);
+    const column = Math.round((easting - metadata.west) / metadata.cellSize);
+    const row = Math.round((metadata.north - northing) / metadata.cellSize);
+    if (
+        column < 0 ||
+        column >= metadata.width ||
+        row < 0 ||
+        row >= metadata.height
+    ) {
+        return null;
+    }
+
+    const featureId = nearestFeatureIds[row * metadata.width + column];
+    const name =
+        featureId > 0 ? metadata.featureNames?.[featureId - 1] : undefined;
+    return {
+        name: name || "Unknown body of water",
+        distanceMeters,
+    };
 };
 
 const projectedBounds = (

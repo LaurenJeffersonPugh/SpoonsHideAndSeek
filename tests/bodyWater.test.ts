@@ -4,6 +4,7 @@ import * as turf from "@turf/turf";
 import type {
     FeatureCollection,
     Geometry,
+    LineString,
     MultiPolygon,
     Polygon,
 } from "geojson";
@@ -12,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import { modifyMapData } from "@/maps/geo-utils";
 import {
     BODY_OF_WATER_QUESTION,
+    nearestBodyOfWater,
     waterCloserThanReferencePolygon,
     type WaterDistanceGrid,
     type WaterDistanceMetadata,
@@ -28,12 +30,20 @@ const metadata = JSON.parse(
 const distanceBytes = fs.readFileSync(
     "public/data/measuring/body-water-distance.bin",
 );
+const nearestBytes = fs.readFileSync(
+    "public/data/measuring/body-water-nearest.bin",
+);
 const grid: WaterDistanceGrid = {
     metadata,
     values: new Uint16Array(
         distanceBytes.buffer,
         distanceBytes.byteOffset,
         distanceBytes.byteLength / Uint16Array.BYTES_PER_ELEMENT,
+    ),
+    nearestFeatureIds: new Uint16Array(
+        nearestBytes.buffer,
+        nearestBytes.byteOffset,
+        nearestBytes.byteLength / Uint16Array.BYTES_PER_ELEMENT,
     ),
 };
 const waterFeatures = JSON.parse(
@@ -53,6 +63,24 @@ describe("body of water measuring questions", () => {
 
         expect(riverWear).toBeLessThan(50);
         expect(sheriffHill).toBeGreaterThan(1000);
+        expect(nearestBodyOfWater(grid, 54.9096, -1.385)?.name).toBe(
+            "River Wear",
+        );
+    });
+
+    it("includes the North Sea coastline in the static water grid", () => {
+        const coastline = waterFeatures.features.find(
+            (feature) => feature.properties?.seaCoastline === true,
+        );
+        expect(coastline?.properties?.name).toBe("North Sea");
+        expect(coastline?.geometry.type).toBe("LineString");
+
+        const coordinates = (coastline!.geometry as LineString).coordinates;
+        const [longitude, latitude] =
+            coordinates[Math.floor(coordinates.length / 2)];
+        const nearest = nearestBodyOfWater(grid, latitude, longitude);
+        expect(nearest?.distanceMeters).toBeLessThanOrEqual(metadata.cellSize);
+        expect(nearest?.name).toBe("North Sea");
     });
 
     it("includes named water and only sufficiently large unnamed lakes or ponds", () => {

@@ -31,7 +31,11 @@ import {
     type SelectedTransitStop,
     TRANSIT_LINE_QUESTION,
 } from "@/maps/spoons-stops";
-import { BODY_OF_WATER_QUESTION } from "@/maps/water-distance";
+import {
+    BODY_OF_WATER_QUESTION,
+    loadWaterDistanceGrid,
+    nearestBodyOfWater,
+} from "@/maps/water-distance";
 
 type QuestionType =
     | "radius"
@@ -138,6 +142,17 @@ const HIDER_NEAREST_POI_CATEGORIES = new Set([
 
 const poiCategory = (category: string) =>
     category.endsWith("-full") ? category.slice(0, -5) : category;
+
+const formatWaterDistance = (distanceMeters: number) =>
+    distanceMeters < 1000
+        ? `${Math.round(distanceMeters / 10) * 10} m`
+        : `${(distanceMeters / 1000).toFixed(1)} km`;
+
+const waterNameForSentence = (name: string) => {
+    if (name === "North Sea") return "the North Sea";
+    if (name.startsWith("Unnamed ")) return `an ${name.toLowerCase()}`;
+    return name;
+};
 
 const inputClass =
     "w-full rounded border border-white/20 bg-black/30 px-2 py-1 text-sm text-white";
@@ -513,9 +528,20 @@ export const HiderSidebar = () => {
                         ? "You are CLOSER to sea level than the seeker."
                         : "You are FURTHER from sea level than the seeker.";
                 } else if (q.type === "body-water") {
-                    result = q.hiderCloser
+                    const comparison = q.hiderCloser
                         ? "YES: you are closer to a body of water than the seekers."
                         : "NO: you are not closer to a body of water than the seekers.";
+                    const grid = await loadWaterDistanceGrid();
+                    const hiderWater = nearestBodyOfWater(
+                        grid,
+                        hiderLoc.latitude,
+                        hiderLoc.longitude,
+                    );
+                    const seekerWater = nearestBodyOfWater(grid, q.lat, q.lng);
+                    result =
+                        hiderWater && seekerWater
+                            ? `${comparison}\nHider: ${formatWaterDistance(hiderWater.distanceMeters)} from ${waterNameForSentence(hiderWater.name)}.\nSeekers: ${formatWaterDistance(seekerWater.distanceMeters)} from ${waterNameForSentence(seekerWater.name)}.`
+                            : comparison;
                 } else {
                     result = q.hiderCloser
                         ? `You are CLOSER to a ${categoryLabel(category)} than the seeker.`
@@ -965,7 +991,7 @@ export const HiderSidebar = () => {
                     )}
 
                     {answer && (
-                        <div className="rounded-md border border-emerald-500/40 bg-emerald-900/30 p-2 text-sm font-semibold">
+                        <div className="whitespace-pre-line rounded-md border border-emerald-500/40 bg-emerald-900/30 p-2 text-sm font-semibold">
                             {answer}
                         </div>
                     )}

@@ -26,7 +26,7 @@ const projectCoordinate = ([longitude, latitude], metadata) => {
     ];
 };
 
-const markCell = (waterCells, metadata, column, row) => {
+const markCell = (waterCells, metadata, column, row, featureId) => {
     const roundedColumn = Math.round(column);
     const roundedRow = Math.round(row);
     if (
@@ -35,11 +35,11 @@ const markCell = (waterCells, metadata, column, row) => {
         roundedRow >= 0 &&
         roundedRow < metadata.height
     ) {
-        waterCells[roundedRow * metadata.width + roundedColumn] = 1;
+        waterCells[roundedRow * metadata.width + roundedColumn] = featureId;
     }
 };
 
-const drawSegment = (waterCells, metadata, start, end) => {
+const drawSegment = (waterCells, metadata, start, end, featureId) => {
     const columnDelta = end[0] - start[0];
     const rowDelta = end[1] - start[1];
     const steps = Math.max(
@@ -53,16 +53,23 @@ const drawSegment = (waterCells, metadata, start, end) => {
             metadata,
             start[0] + columnDelta * fraction,
             start[1] + rowDelta * fraction,
+            featureId,
         );
     }
 };
 
-const drawLine = (waterCells, metadata, coordinates) => {
+const drawLine = (waterCells, metadata, coordinates, featureId) => {
     const projected = coordinates.map((coordinate) =>
         projectCoordinate(coordinate, metadata),
     );
     if (projected.length === 1) {
-        markCell(waterCells, metadata, projected[0][0], projected[0][1]);
+        markCell(
+            waterCells,
+            metadata,
+            projected[0][0],
+            projected[0][1],
+            featureId,
+        );
         return projected;
     }
     for (let index = 1; index < projected.length; index++) {
@@ -71,14 +78,15 @@ const drawLine = (waterCells, metadata, coordinates) => {
             metadata,
             projected[index - 1],
             projected[index],
+            featureId,
         );
     }
     return projected;
 };
 
-const fillPolygon = (waterCells, metadata, rings) => {
+const fillPolygon = (waterCells, metadata, rings, featureId) => {
     const projectedRings = rings.map((ring) =>
-        drawLine(waterCells, metadata, ring),
+        drawLine(waterCells, metadata, ring, featureId),
     );
     const rows = projectedRings.flatMap((ring) =>
         ring.map((coordinate) => coordinate[1]),
@@ -111,7 +119,7 @@ const fillPolygon = (waterCells, metadata, rings) => {
                 Math.floor(intersections[index + 1]),
             );
             waterCells.fill(
-                1,
+                featureId,
                 row * metadata.width + firstColumn,
                 row * metadata.width + lastColumn + 1,
             );
@@ -119,49 +127,59 @@ const fillPolygon = (waterCells, metadata, rings) => {
     }
 };
 
-const rasterizeGeometry = (waterCells, metadata, geometry) => {
+const rasterizeGeometry = (waterCells, metadata, geometry, featureId) => {
     switch (geometry.type) {
         case "Point": {
             const [column, row] = projectCoordinate(
                 geometry.coordinates,
                 metadata,
             );
-            markCell(waterCells, metadata, column, row);
+            markCell(waterCells, metadata, column, row, featureId);
             break;
         }
         case "MultiPoint":
             for (const coordinate of geometry.coordinates) {
-                rasterizeGeometry(waterCells, metadata, {
-                    type: "Point",
-                    coordinates: coordinate,
-                });
+                rasterizeGeometry(
+                    waterCells,
+                    metadata,
+                    {
+                        type: "Point",
+                        coordinates: coordinate,
+                    },
+                    featureId,
+                );
             }
             break;
         case "LineString":
-            drawLine(waterCells, metadata, geometry.coordinates);
+            drawLine(waterCells, metadata, geometry.coordinates, featureId);
             break;
         case "MultiLineString":
             for (const line of geometry.coordinates) {
-                drawLine(waterCells, metadata, line);
+                drawLine(waterCells, metadata, line, featureId);
             }
             break;
         case "Polygon":
-            fillPolygon(waterCells, metadata, geometry.coordinates);
+            fillPolygon(waterCells, metadata, geometry.coordinates, featureId);
             break;
         case "MultiPolygon":
             for (const polygon of geometry.coordinates) {
-                fillPolygon(waterCells, metadata, polygon);
+                fillPolygon(waterCells, metadata, polygon, featureId);
             }
             break;
         case "GeometryCollection":
             for (const child of geometry.geometries) {
-                rasterizeGeometry(waterCells, metadata, child);
+                rasterizeGeometry(waterCells, metadata, child, featureId);
             }
             break;
     }
 };
 
-const squaredDistanceTransform = (source, length, output) => {
+const squaredDistanceTransform = (
+    source,
+    length,
+    output,
+    nearestSourcePositions,
+) => {
     let firstSource = -1;
     for (let index = 0; index < length; index++) {
         if (source[index] < INFINITE_DISTANCE) {
@@ -171,6 +189,7 @@ const squaredDistanceTransform = (source, length, output) => {
     }
     if (firstSource === -1) {
         output.fill(INFINITE_DISTANCE, 0, length);
+        nearestSourcePositions.fill(-1, 0, length);
         return;
     }
 
@@ -209,13 +228,16 @@ const squaredDistanceTransform = (source, length, output) => {
         while (boundaries[siteIndex + 1] < position) siteIndex++;
         const delta = position - sites[siteIndex];
         output[position] = delta * delta + source[sites[siteIndex]];
+        nearestSourcePositions[position] = sites[siteIndex];
     }
 };
 
 const buildDistanceGrid = (waterCells, metadata) => {
     const intermediate = new Float64Array(waterCells.length);
+    const intermediateFeatureIds = new Uint16Array(waterCells.length);
     const source = new Float64Array(Math.max(metadata.width, metadata.height));
     const transformed = new Float64Array(source.length);
+    const nearestSourcePositions = new Int32Array(source.length);
 
     for (let column = 0; column < metadata.width; column++) {
         for (let row = 0; row < metadata.height; row++) {
@@ -223,27 +245,57 @@ const buildDistanceGrid = (waterCells, metadata) => {
                 ? 0
                 : INFINITE_DISTANCE;
         }
-        squaredDistanceTransform(source, metadata.height, transformed);
+        squaredDistanceTransform(
+            source,
+            metadata.height,
+            transformed,
+            nearestSourcePositions,
+        );
         for (let row = 0; row < metadata.height; row++) {
-            intermediate[row * metadata.width + column] = transformed[row];
+            const targetIndex = row * metadata.width + column;
+            intermediate[targetIndex] = transformed[row];
+            const sourceRow = nearestSourcePositions[row];
+            intermediateFeatureIds[targetIndex] =
+                sourceRow < 0
+                    ? 0
+                    : waterCells[sourceRow * metadata.width + column];
         }
     }
 
     const distances = new Uint16Array(waterCells.length);
+    const nearestFeatureIds = new Uint16Array(waterCells.length);
     for (let row = 0; row < metadata.height; row++) {
         const offset = row * metadata.width;
         for (let column = 0; column < metadata.width; column++) {
             source[column] = intermediate[offset + column];
         }
-        squaredDistanceTransform(source, metadata.width, transformed);
+        squaredDistanceTransform(
+            source,
+            metadata.width,
+            transformed,
+            nearestSourcePositions,
+        );
         for (let column = 0; column < metadata.width; column++) {
             distances[offset + column] = Math.min(
                 MAX_DISTANCE_METERS,
                 Math.round(Math.sqrt(transformed[column]) * metadata.cellSize),
             );
+            const sourceColumn = nearestSourcePositions[column];
+            nearestFeatureIds[offset + column] =
+                sourceColumn < 0
+                    ? 0
+                    : intermediateFeatureIds[offset + sourceColumn];
         }
     }
-    return distances;
+    return { distances, nearestFeatureIds };
+};
+
+const waterFeatureName = (feature) => {
+    const name = String(feature.properties?.name ?? "").trim();
+    if (name) return name;
+    if (feature.properties?.water === "lake") return "Unnamed lake";
+    if (feature.properties?.water === "pond") return "Unnamed pond";
+    return "Unnamed body of water";
 };
 
 export const generateWaterDistanceData = async () => {
@@ -266,13 +318,22 @@ export const generateWaterDistanceData = async () => {
         scale: 1,
         noData: NO_DATA,
         crs: terrainMetadata.crs,
-        source: "OpenStreetMap body-of-water geometry",
+        source: "OpenStreetMap body-of-water and North Sea coastline geometry",
         attribution: "(c) OpenStreetMap contributors",
+        featureNames: waterData.features.map(waterFeatureName),
     };
-    const waterCells = new Uint8Array(metadata.width * metadata.height);
-    for (const feature of waterData.features) {
+    if (waterData.features.length >= NO_DATA) {
+        throw new Error("Too many water features for the Uint16 lookup grid");
+    }
+    const waterCells = new Uint16Array(metadata.width * metadata.height);
+    for (const [featureIndex, feature] of waterData.features.entries()) {
         if (feature.geometry) {
-            rasterizeGeometry(waterCells, metadata, feature.geometry);
+            rasterizeGeometry(
+                waterCells,
+                metadata,
+                feature.geometry,
+                featureIndex + 1,
+            );
         }
     }
     const waterCellCount = waterCells.reduce(
@@ -286,11 +347,18 @@ export const generateWaterDistanceData = async () => {
     console.log(
         `Calculating water distances for ${metadata.width} x ${metadata.height} cells...`,
     );
-    const distances = buildDistanceGrid(waterCells, metadata);
+    const { distances, nearestFeatureIds } = buildDistanceGrid(
+        waterCells,
+        metadata,
+    );
     await Promise.all([
         fs.writeFile(
             path.join(outputDirectory, "body-water-distance.bin"),
             Buffer.from(distances.buffer),
+        ),
+        fs.writeFile(
+            path.join(outputDirectory, "body-water-nearest.bin"),
+            Buffer.from(nearestFeatureIds.buffer),
         ),
         fs.writeFile(
             path.join(outputDirectory, "body-water-distance.json"),

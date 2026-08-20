@@ -269,6 +269,8 @@ const isEligibleBodyOfWater = (feature) => {
     );
 };
 
+const isSeaCoastline = (feature) => feature.properties?.natural === "coastline";
+
 const generateBodyWaterData = async () => {
     console.log("Fetching static body-of-water geometry...");
     const waterData = await fetchOverpass(
@@ -278,33 +280,51 @@ const generateBodyWaterData = async () => {
   nwr["natural"="water"](${bbox});
   nwr["water"~"^(lake|pond|reservoir)$"](${bbox});
   way["waterway"~"^(river|canal|stream)$"](${bbox});
+  way["natural"="coastline"](${bbox});
 );
 out geom tags;`,
     );
     const candidates =
         osmtogeojson(waterData).features.filter(withinClipRegion);
-    const eligibleFeatures = candidates.filter(isEligibleBodyOfWater);
-    const waterFeatures = eligibleFeatures.map((feature) => {
-        const areaSquareMeters = bodyOfWaterAreaSquareMeters(feature);
-        return {
-            ...feature,
-            properties: {
-                name: featureName(feature.properties) ?? undefined,
-                natural: feature.properties?.natural,
-                water: feature.properties?.water,
-                waterway: feature.properties?.waterway,
-                areaSquareMeters:
-                    areaSquareMeters === null
-                        ? undefined
-                        : Math.round(areaSquareMeters),
-            },
-        };
+    const eligibleFeatures = candidates.filter(
+        (feature) => isSeaCoastline(feature) || isEligibleBodyOfWater(feature),
+    );
+    const waterFeatures = eligibleFeatures.flatMap((feature) => {
+        const seaCoastline = isSeaCoastline(feature);
+        const normalizedFeatures = seaCoastline
+            ? lineFeatures([feature])
+            : [feature];
+
+        return normalizedFeatures.map((normalizedFeature) => {
+            const areaSquareMeters = seaCoastline
+                ? null
+                : bodyOfWaterAreaSquareMeters(normalizedFeature);
+            return {
+                ...normalizedFeature,
+                properties: {
+                    name:
+                        featureName(feature.properties) ??
+                        (seaCoastline ? "North Sea" : undefined),
+                    natural: feature.properties?.natural,
+                    water: feature.properties?.water,
+                    waterway: feature.properties?.waterway,
+                    seaCoastline: seaCoastline || undefined,
+                    areaSquareMeters:
+                        areaSquareMeters === null
+                            ? undefined
+                            : Math.round(areaSquareMeters),
+                },
+            };
+        });
     });
     const namedCount = waterFeatures.filter((feature) =>
         Boolean(feature.properties.name),
     ).length;
+    const seaCoastlineCount = waterFeatures.filter(
+        (feature) => feature.properties.seaCoastline,
+    ).length;
     console.log(
-        `  kept ${waterFeatures.length} of ${candidates.length} water features (${namedCount} named, ${waterFeatures.length - namedCount} qualifying unnamed lakes/ponds)`,
+        `  kept ${waterFeatures.length} of ${candidates.length} water features (${namedCount} named including ${seaCoastlineCount} North Sea coastline segments, ${waterFeatures.length - namedCount} qualifying unnamed lakes/ponds)`,
     );
     await writeGeoJson(
         path.join(measuringDir, "body-water.geojson"),
