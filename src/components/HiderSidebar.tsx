@@ -35,6 +35,7 @@ import {
     BODY_OF_WATER_QUESTION,
     loadWaterDistanceGrid,
     nearestBodyOfWater,
+    type NearestBodyOfWater,
 } from "@/maps/water-distance";
 
 type QuestionType =
@@ -223,6 +224,12 @@ export const HiderSidebar = () => {
         name: string;
         distanceMiles: number;
     } | null>(null);
+    const [waterDetails, setWaterDetails] = useState<{
+        hider: NearestBodyOfWater | null;
+        seeker: NearestBodyOfWater | null;
+        seekerCoordinatesValid: boolean;
+    } | null>(null);
+    const [waterDetailsLoading, setWaterDetailsLoading] = useState(false);
     const [adminLocation, setAdminLocation] = useState<string | null>(null);
     const [pasteMsg, setPasteMsg] = useState<string | null>(null);
 
@@ -421,6 +428,57 @@ export const HiderSidebar = () => {
         };
     }, [type, hiderLoc, matchMode]);
 
+    useEffect(() => {
+        if (type !== "measuring" || category !== "body-water" || !hiderLoc) {
+            setWaterDetails(null);
+            setWaterDetailsLoading(false);
+            return;
+        }
+
+        let cancelled = false;
+        const seekerLatitude = parseFloat(lat);
+        const seekerLongitude = parseFloat(lng);
+        const seekerCoordinatesValid =
+            Number.isFinite(seekerLatitude) && Number.isFinite(seekerLongitude);
+
+        setWaterDetailsLoading(true);
+        void loadWaterDistanceGrid()
+            .then((grid) => {
+                if (cancelled) return;
+                setWaterDetails({
+                    hider: nearestBodyOfWater(
+                        grid,
+                        hiderLoc.latitude,
+                        hiderLoc.longitude,
+                    ),
+                    seeker: seekerCoordinatesValid
+                        ? nearestBodyOfWater(
+                              grid,
+                              seekerLatitude,
+                              seekerLongitude,
+                          )
+                        : null,
+                    seekerCoordinatesValid,
+                });
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    setWaterDetails({
+                        hider: null,
+                        seeker: null,
+                        seekerCoordinatesValid,
+                    });
+                }
+            })
+            .finally(() => {
+                if (!cancelled) setWaterDetailsLoading(false);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [category, hiderLoc, lat, lng, type]);
+
     const computeAnswer = async () => {
         if (!hiderLoc || !type) return;
         setComputing(true);
@@ -538,10 +596,15 @@ export const HiderSidebar = () => {
                         hiderLoc.longitude,
                     );
                     const seekerWater = nearestBodyOfWater(grid, q.lat, q.lng);
-                    result =
-                        hiderWater && seekerWater
-                            ? `${comparison}\nHider: ${formatWaterDistance(hiderWater.distanceMeters)} from ${waterNameForSentence(hiderWater.name)}.\nSeekers: ${formatWaterDistance(seekerWater.distanceMeters)} from ${waterNameForSentence(seekerWater.name)}.`
-                            : comparison;
+                    const waterLines = [
+                        hiderWater
+                            ? `Hider: ${formatWaterDistance(hiderWater.distanceMeters)} from ${waterNameForSentence(hiderWater.name)}.`
+                            : "Hider: water distance unavailable outside the static data area.",
+                        seekerWater
+                            ? `Seekers: ${formatWaterDistance(seekerWater.distanceMeters)} from ${waterNameForSentence(seekerWater.name)}.`
+                            : "Seekers: water distance unavailable outside the static data area.",
+                    ];
+                    result = [comparison, ...waterLines].join("\n");
                 } else {
                     result = q.hiderCloser
                         ? `You are CLOSER to a ${categoryLabel(category)} than the seeker.`
@@ -916,9 +979,37 @@ export const HiderSidebar = () => {
                     )}
 
                     {type === "measuring" && category === "body-water" && (
-                        <p className="text-sm text-white/80">
-                            {BODY_OF_WATER_QUESTION}
-                        </p>
+                        <>
+                            <p className="text-sm text-white/80">
+                                {BODY_OF_WATER_QUESTION}
+                            </p>
+                            <div className="rounded-md border border-white/15 bg-black/20 p-2 text-sm">
+                                {waterDetailsLoading ? (
+                                    <span className="text-white/70">
+                                        Loading water distances...
+                                    </span>
+                                ) : (
+                                    <div className="flex flex-col gap-1">
+                                        <WaterLocationSummary
+                                            label="Hider"
+                                            water={waterDetails?.hider ?? null}
+                                        />
+                                        {waterDetails?.seekerCoordinatesValid ? (
+                                            <WaterLocationSummary
+                                                label="Seekers"
+                                                water={
+                                                    waterDetails.seeker ?? null
+                                                }
+                                            />
+                                        ) : (
+                                            <span className="text-white/60">
+                                                Seekers: enter their coordinates
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </>
                     )}
 
                     {type === "measuring" && category === "rail-measure" && (
@@ -1000,6 +1091,21 @@ export const HiderSidebar = () => {
         </div>
     );
 };
+
+const WaterLocationSummary = ({
+    label,
+    water,
+}: {
+    label: string;
+    water: NearestBodyOfWater | null;
+}) => (
+    <div>
+        <span className="font-semibold">{label}:</span>{" "}
+        {water
+            ? `${formatWaterDistance(water.distanceMeters)} from ${waterNameForSentence(water.name)}`
+            : "water distance unavailable outside the static data area"}
+    </div>
+);
 
 function categoryLabel(value: string) {
     return (
