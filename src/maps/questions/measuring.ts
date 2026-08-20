@@ -42,10 +42,38 @@ import {
 } from "@/maps/terrain";
 import {
     loadWaterDistanceGrid,
+    nearestBodyOfWater,
     waterCloserThanReferencePolygon,
     waterDistanceMeters,
 } from "@/maps/water-distance";
 import { isEligibleBodyOfWater } from "@/maps/water-features";
+
+const HOME_GAME_MEASURING_TYPES = new Set<string>([
+    "zoo_aquarium",
+    "aquarium",
+    "zoo",
+    "theme_park",
+    "peak",
+    "museum",
+    "hospital",
+    "cinema",
+    "library",
+    "golf_course",
+    "consulate",
+    "park",
+]);
+
+const FULL_GAME_POINT_TYPES = new Set<string>([
+    "zoo_aquarium-full",
+    "amusement_park-full",
+    "peak-full",
+    "museum-full",
+    "hospital-full",
+    "cinema-full",
+    "library-full",
+    "golf_course-full",
+    "park-full",
+]);
 
 const osmTagForLocation = (location: APILocations) => {
     if (location === "amusement_park") {
@@ -869,22 +897,7 @@ export const hiderifyMeasuring = async (
         return question;
     }
 
-    if (
-        [
-            "zoo_aquarium",
-            "aquarium",
-            "zoo",
-            "theme_park",
-            "peak",
-            "museum",
-            "hospital",
-            "cinema",
-            "library",
-            "golf_course",
-            "consulate",
-            "park",
-        ].includes(question.type)
-    ) {
+    if (HOME_GAME_MEASURING_TYPES.has(question.type)) {
         const questionNearest = await nearestToQuestion(
             question as HomeGameMeasuringQuestions,
         );
@@ -986,6 +999,175 @@ export const hiderifyMeasuring = async (
     }
 
     return question;
+};
+
+export type MeasuringComparisonDetails = {
+    kind: "distance" | "elevation";
+    hider: { value: number; name?: string };
+    seeker: { value: number; name?: string };
+};
+
+const featureDisplayName = (feature: Feature) => {
+    const name = feature.properties?.["name:en"] ?? feature.properties?.name;
+    return typeof name === "string" && name.trim() ? name.trim() : undefined;
+};
+
+const pointComparisonDetails = (
+    features: Feature<Point>[],
+    seekerCoordinates: [number, number],
+    hiderCoordinates: [number, number],
+): MeasuringComparisonDetails | null => {
+    if (features.length === 0) return null;
+    const collection = turf.featureCollection(features);
+    const seekerPoint = turf.point(seekerCoordinates);
+    const hiderPoint = turf.point(hiderCoordinates);
+    const seekerNearest = turf.nearestPoint(seekerPoint, collection);
+    const hiderNearest = turf.nearestPoint(hiderPoint, collection);
+
+    return {
+        kind: "distance",
+        seeker: {
+            value: turf.distance(seekerPoint, seekerNearest, {
+                units: "meters",
+            }),
+            name: featureDisplayName(seekerNearest),
+        },
+        hider: {
+            value: turf.distance(hiderPoint, hiderNearest, {
+                units: "meters",
+            }),
+            name: featureDisplayName(hiderNearest),
+        },
+    };
+};
+
+export const measuringComparisonDetails = async (
+    question: MeasuringQuestion,
+    hider: { latitude: number; longitude: number },
+): Promise<MeasuringComparisonDetails | null> => {
+    const seekerCoordinates: [number, number] = [question.lng, question.lat];
+    const hiderCoordinates: [number, number] = [
+        hider.longitude,
+        hider.latitude,
+    ];
+
+    if (question.type === "sea-level") {
+        const [seekerElevation, hiderElevation] = await Promise.all([
+            fetchElevationMeters(question.lat, question.lng),
+            fetchElevationMeters(hider.latitude, hider.longitude),
+        ]);
+        if (seekerElevation === null || hiderElevation === null) return null;
+        return {
+            kind: "elevation",
+            seeker: { value: seekerElevation },
+            hider: { value: hiderElevation },
+        };
+    }
+
+    if (question.type === "body-water") {
+        const grid = await loadWaterDistanceGrid();
+        const seekerWater = nearestBodyOfWater(
+            grid,
+            question.lat,
+            question.lng,
+        );
+        const hiderWater = nearestBodyOfWater(
+            grid,
+            hider.latitude,
+            hider.longitude,
+        );
+        if (!seekerWater || !hiderWater) return null;
+        return {
+            kind: "distance",
+            seeker: {
+                value: seekerWater.distanceMeters,
+                name: seekerWater.name,
+            },
+            hider: {
+                value: hiderWater.distanceMeters,
+                name: hiderWater.name,
+            },
+        };
+    }
+
+    if (question.type === "rail-measure") {
+        const target = await resolveRailStationTarget(question);
+        if (!target) return null;
+        return pointComparisonDetails(
+            [target],
+            seekerCoordinates,
+            hiderCoordinates,
+        );
+    }
+
+    if (HOME_GAME_MEASURING_TYPES.has(question.type)) {
+        const [seekerNearest, hiderNearest] = await Promise.all([
+            nearestToQuestion(question as HomeGameMeasuringQuestions),
+            nearestToQuestion({
+                ...question,
+                lat: hider.latitude,
+                lng: hider.longitude,
+            } as HomeGameMeasuringQuestions),
+        ]);
+        return {
+            kind: "distance",
+            seeker: {
+                value: Number(seekerNearest.properties.distanceToPoint) * 1000,
+                name: featureDisplayName(seekerNearest),
+            },
+            hider: {
+                value: Number(hiderNearest.properties.distanceToPoint) * 1000,
+                name: featureDisplayName(hiderNearest),
+            },
+        };
+    }
+
+    if (FULL_GAME_POINT_TYPES.has(question.type)) {
+        const location = question.type.replace("-full", "") as APILocations;
+        const points = await loadPregeneratedPois(location);
+        return pointComparisonDetails(
+            points,
+            seekerCoordinates,
+            hiderCoordinates,
+        );
+    }
+
+    if (question.type === "airport") {
+        try {
+            const points = (await staticMeasuringFeatures("airports")).filter(
+                (feature): feature is Feature<Point> =>
+                    feature.geometry.type === "Point",
+            );
+            const details = pointComparisonDetails(
+                points,
+                seekerCoordinates,
+                hiderCoordinates,
+            );
+            if (details) return details;
+        } catch {
+            // Fall through to the same static/live geometry used by the map.
+        }
+    }
+
+    const targets =
+        question.type === "coastline"
+            ? await coastlineFeatures()
+            : await determineMeasuringBoundary(question);
+    if (targets === false || targets === undefined) return null;
+
+    const [seekerDistance, hiderDistance] = nearestFeatureDistancesMeters(
+        targets as Feature<Geometry>[],
+        [seekerCoordinates, hiderCoordinates],
+    );
+    if (!Number.isFinite(seekerDistance) || !Number.isFinite(hiderDistance)) {
+        return null;
+    }
+
+    return {
+        kind: "distance",
+        seeker: { value: seekerDistance },
+        hider: { value: hiderDistance },
+    };
 };
 
 export const measuringPlanningPolygon = async (question: MeasuringQuestion) => {

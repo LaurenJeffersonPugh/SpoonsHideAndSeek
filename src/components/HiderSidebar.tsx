@@ -1,5 +1,6 @@
 import { useStore } from "@nanostores/react";
 import * as turf from "@turf/turf";
+import type { Feature, Point } from "geojson";
 import { ClipboardPaste, SidebarCloseIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -8,11 +9,21 @@ import { hiderSidebarOpen } from "@/components/ui/sidebar-l";
 import { leafletMapContext } from "@/lib/context";
 import { parseCoordinates } from "@/lib/coordinates";
 import { cn } from "@/lib/utils";
-import { loadAdminBoundaries, loadPregeneratedPois } from "@/maps/api";
-import { hiderifyMatching } from "@/maps/questions/matching";
+import {
+    loadAdminBoundaries,
+    loadPregeneratedPois,
+    nearestToQuestion,
+} from "@/maps/api";
+import {
+    findTransitStationsInZone,
+    hiderifyMatching,
+    nearestStreetOrPathDetails,
+} from "@/maps/questions/matching";
 import {
     findMeasuringTransitStations,
     hiderifyMeasuring,
+    measuringComparisonDetails,
+    type MeasuringComparisonDetails,
     railStationTargetFromFeature,
 } from "@/maps/questions/measuring";
 import { hiderifyRadius } from "@/maps/questions/radius";
@@ -20,6 +31,7 @@ import { hiderifyTentacles } from "@/maps/questions/tentacles";
 import { hiderifyThermometer } from "@/maps/questions/thermometer";
 import type {
     APILocations,
+    HomeGameMatchingQuestions,
     MatchingQuestion,
     MeasuringQuestion,
     RadiusQuestion,
@@ -28,6 +40,7 @@ import type {
 } from "@/maps/schema";
 import { SEA_LEVEL_QUESTION } from "@/maps/sea-level";
 import {
+    loadSpoonsStops,
     type SelectedTransitStop,
     TRANSIT_LINE_QUESTION,
 } from "@/maps/spoons-stops";
@@ -141,18 +154,70 @@ const HIDER_NEAREST_POI_CATEGORIES = new Set([
     "amusement_park-full",
 ]);
 
+const MATCHING_POI_CATEGORIES = new Set([
+    "park",
+    "zoo_aquarium",
+    "golf_course",
+    "museum",
+    "cinema",
+    "hospital",
+    "library",
+]);
+
 const poiCategory = (category: string) =>
     category.endsWith("-full") ? category.slice(0, -5) : category;
 
-const formatWaterDistance = (distanceMeters: number) =>
+const formatMetricDistance = (distanceMeters: number) =>
     distanceMeters < 1000
         ? `${Math.round(distanceMeters / 10) * 10} m`
         : `${(distanceMeters / 1000).toFixed(1)} km`;
+
+const formatElevation = (elevationMeters: number) => {
+    const rounded = Math.round(Math.abs(elevationMeters));
+    if (rounded === 0) return "at sea level";
+    return `${rounded} m ${elevationMeters >= 0 ? "above" : "below"} sea level`;
+};
+
+const featureName = (feature: Feature<Point>) => {
+    const name = feature.properties?.["name:en"] ?? feature.properties?.name;
+    return typeof name === "string" && name.trim() ? name.trim() : "unknown";
+};
+
+const categoryWithArticle = (value: string) => {
+    const label = categoryLabel(value);
+    return `${/^[aeiou]/i.test(label) ? "an" : "a"} ${label}`;
+};
 
 const waterNameForSentence = (name: string) => {
     if (name === "North Sea") return "the North Sea";
     if (name.startsWith("Unnamed ")) return `an ${name.toLowerCase()}`;
     return name;
+};
+
+const measuringDetailLines = (
+    details: MeasuringComparisonDetails | null,
+    fallbackTargetName: string,
+) => {
+    if (!details) {
+        return ["Comparison values are unavailable from the static data."];
+    }
+    if (details.kind === "elevation") {
+        return [
+            `Hider: ${formatElevation(details.hider.value)}.`,
+            `Seekers: ${formatElevation(details.seeker.value)}.`,
+        ];
+    }
+
+    const describe = (value: { value: number; name?: string }) => {
+        const target = value.name
+            ? waterNameForSentence(value.name)
+            : fallbackTargetName;
+        return `${formatMetricDistance(value.value)} from ${target}`;
+    };
+    return [
+        `Hider: ${describe(details.hider)}.`,
+        `Seekers: ${describe(details.seeker)}.`,
+    ];
 };
 
 const inputClass =
@@ -205,7 +270,7 @@ export const HiderSidebar = () => {
     const [lngB, setLngB] = useState("");
     const [radius, setRadius] = useState("1");
     const [unit, setUnit] = useState<"miles" | "kilometers" | "meters">(
-        "miles",
+        "kilometers",
     );
     const [category, setCategory] = useState(CATEGORY_OPTIONS[0].value);
     const [railStations, setRailStations] = useState<
@@ -222,7 +287,7 @@ export const HiderSidebar = () => {
     );
     const [nearest, setNearest] = useState<{
         name: string;
-        distanceMiles: number;
+        distanceMeters: number;
     } | null>(null);
     const [waterDetails, setWaterDetails] = useState<{
         hider: NearestBodyOfWater | null;
@@ -365,7 +430,7 @@ export const HiderSidebar = () => {
                 let bestDistance = Infinity;
                 for (const feature of features) {
                     const distance = turf.distance(hider, feature, {
-                        units: "miles",
+                        units: "meters",
                     });
                     if (distance < bestDistance) {
                         bestDistance = distance;
@@ -379,7 +444,7 @@ export const HiderSidebar = () => {
                                   name:
                                       (best.properties?.name as string) ??
                                       "unknown",
-                                  distanceMiles: bestDistance,
+                                  distanceMeters: bestDistance,
                               }
                             : null,
                     );
@@ -505,9 +570,19 @@ export const HiderSidebar = () => {
                     } as RadiusQuestion,
                     hiderLoc,
                 );
-                result = q.within
+                const distanceMeters = turf.distance(
+                    turf.point([hiderLoc.longitude, hiderLoc.latitude]),
+                    turf.point([q.lng, q.lat]),
+                    { units: "meters" },
+                );
+                const comparison = q.within
                     ? `You ARE within ${radius} ${unit} of that point.`
                     : `You are NOT within ${radius} ${unit} of that point.`;
+                result = [
+                    comparison,
+                    `Hider: ${formatMetricDistance(distanceMeters)} from the seeker's point.`,
+                    `Radius: ${formatMetricDistance(turf.convertLength(q.radius, q.unit, "meters"))}.`,
+                ].join("\n");
             } else if (type === "thermometer") {
                 const q = await hiderifyThermometer(
                     {
@@ -524,9 +599,28 @@ export const HiderSidebar = () => {
                     } as ThermometerQuestion,
                     hiderLoc,
                 );
-                result = q.warmer
+                const hiderPoint = turf.point([
+                    hiderLoc.longitude,
+                    hiderLoc.latitude,
+                ]);
+                const startDistance = turf.distance(
+                    hiderPoint,
+                    turf.point([q.lngA, q.latA]),
+                    { units: "meters" },
+                );
+                const endDistance = turf.distance(
+                    hiderPoint,
+                    turf.point([q.lngB, q.latB]),
+                    { units: "meters" },
+                );
+                const comparison = q.warmer
                     ? "WARMER — you are closer to the end point (B)."
                     : "COLDER — you are closer to the start point (A).";
+                result = [
+                    comparison,
+                    `Hider to start (A): ${formatMetricDistance(startDistance)}.`,
+                    `Hider to end (B): ${formatMetricDistance(endDistance)}.`,
+                ].join("\n");
             } else if (type === "tentacles") {
                 const q = await hiderifyTentacles(
                     {
@@ -540,26 +634,36 @@ export const HiderSidebar = () => {
                     } as unknown as TentacleQuestion,
                     hiderLoc,
                 );
+                const hiderPoint = turf.point([
+                    hiderLoc.longitude,
+                    hiderLoc.latitude,
+                ]);
+                const seekerPoint = turf.point([q.lng, q.lat]);
+                const distanceToSeeker = turf.distance(
+                    hiderPoint,
+                    seekerPoint,
+                    { units: "meters" },
+                );
                 if (q.location) {
-                    result = `Inside the seeker's ${radius} ${unit} circle, your nearest ${categoryLabel(
-                        category,
-                    )} is: ${q.location.properties?.name ?? "unknown"}.`;
+                    const locationName =
+                        q.location.properties?.name ?? "selected place";
+                    result = [
+                        `Inside the seeker's ${radius} ${unit} circle, your nearest ${categoryLabel(category)} is ${locationName}.`,
+                        `Hider to seeker's point: ${formatMetricDistance(distanceToSeeker)}.`,
+                        `Hider to ${locationName}: ${formatMetricDistance(turf.distance(hiderPoint, q.location, { units: "meters" }))}.`,
+                        `Seekers to ${locationName}: ${formatMetricDistance(turf.distance(seekerPoint, q.location, { units: "meters" }))}.`,
+                    ].join("\n");
                 } else {
-                    const distToSeeker = turf.distance(
-                        turf.point([hiderLoc.longitude, hiderLoc.latitude]),
-                        turf.point([num(lng), num(lat)]),
-                        { units: unit },
-                    );
-                    result =
-                        distToSeeker > num(radius)
-                            ? `You're OUTSIDE the seeker's ${radius} ${unit} circle (you're ${distToSeeker.toFixed(
-                                  1,
-                              )} ${unit} from their point), so you're not near any ${categoryLabel(
-                                  category,
-                              )} they're asking about.`
-                            : `You're inside the seeker's ${radius} ${unit} circle, but it contains no ${categoryLabel(
-                                  category,
-                              )}.`;
+                    const outsideCircle =
+                        turf.convertLength(distanceToSeeker, "meters", q.unit) >
+                        q.radius;
+                    const comparison = outsideCircle
+                        ? `You're OUTSIDE the seeker's ${radius} ${unit} circle, so you're not near any ${categoryLabel(category)} they're asking about.`
+                        : `You're inside the seeker's ${radius} ${unit} circle, but it contains no ${categoryLabel(category)}.`;
+                    result = [
+                        comparison,
+                        `Hider to seeker's point: ${formatMetricDistance(distanceToSeeker)}.`,
+                    ].join("\n");
                 }
             } else if (type === "measuring") {
                 const q = await hiderifyMeasuring(
@@ -575,16 +679,28 @@ export const HiderSidebar = () => {
                     } as unknown as MeasuringQuestion,
                     hiderLoc,
                 );
+                const details =
+                    q.type === "body-water"
+                        ? null
+                        : await measuringComparisonDetails(q, hiderLoc);
                 if (q.type === "rail-measure") {
                     const stationName =
                         q.targetStation?.name ?? "the selected rail station";
-                    result = q.hiderCloser
+                    const comparison = q.hiderCloser
                         ? `You are CLOSER to ${stationName} than the seeker.`
                         : `You are FURTHER from ${stationName} than the seeker.`;
+                    result = [
+                        comparison,
+                        ...measuringDetailLines(details, stationName),
+                    ].join("\n");
                 } else if (q.type === "sea-level") {
-                    result = q.hiderCloser
+                    const comparison = q.hiderCloser
                         ? "You are CLOSER to sea level than the seeker."
                         : "You are FURTHER from sea level than the seeker.";
+                    result = [
+                        comparison,
+                        ...measuringDetailLines(details, "sea level"),
+                    ].join("\n");
                 } else if (q.type === "body-water") {
                     const comparison = q.hiderCloser
                         ? "YES: you are closer to a body of water than the seekers."
@@ -598,17 +714,24 @@ export const HiderSidebar = () => {
                     const seekerWater = nearestBodyOfWater(grid, q.lat, q.lng);
                     const waterLines = [
                         hiderWater
-                            ? `Hider: ${formatWaterDistance(hiderWater.distanceMeters)} from ${waterNameForSentence(hiderWater.name)}.`
+                            ? `Hider: ${formatMetricDistance(hiderWater.distanceMeters)} from ${waterNameForSentence(hiderWater.name)}.`
                             : "Hider: water distance unavailable outside the static data area.",
                         seekerWater
-                            ? `Seekers: ${formatWaterDistance(seekerWater.distanceMeters)} from ${waterNameForSentence(seekerWater.name)}.`
+                            ? `Seekers: ${formatMetricDistance(seekerWater.distanceMeters)} from ${waterNameForSentence(seekerWater.name)}.`
                             : "Seekers: water distance unavailable outside the static data area.",
                     ];
                     result = [comparison, ...waterLines].join("\n");
                 } else {
-                    result = q.hiderCloser
-                        ? `You are CLOSER to a ${categoryLabel(category)} than the seeker.`
-                        : `You are FURTHER from a ${categoryLabel(category)} than the seeker.`;
+                    const comparison = q.hiderCloser
+                        ? `You are CLOSER to ${categoryWithArticle(category)} than the seeker.`
+                        : `You are FURTHER from ${categoryWithArticle(category)} than the seeker.`;
+                    result = [
+                        comparison,
+                        ...measuringDetailLines(
+                            details,
+                            categoryWithArticle(category),
+                        ),
+                    ].join("\n");
                 }
             } else if (type === "matching" && matchMode !== "category") {
                 // Administration-district match: are the hider and the seeker's
@@ -629,15 +752,17 @@ export const HiderSidebar = () => {
                 ]);
                 const seekerDistrict = districtOf([num(lng), num(lat)]);
 
-                if (!hiderDistrict) {
-                    result = `You don't appear to be inside any ${levelLabel} — are you within Tyne & Wear?`;
-                } else if (!seekerDistrict) {
-                    result = `You're in ${hiderDistrict} ${levelLabel}. The seeker's point isn't inside any ${levelLabel}.`;
-                } else if (hiderDistrict === seekerDistrict) {
-                    result = `SAME — you're both in ${hiderDistrict} ${levelLabel}.`;
-                } else {
-                    result = `DIFFERENT — you're in ${hiderDistrict}, the seeker is in ${seekerDistrict}.`;
-                }
+                const comparison =
+                    hiderDistrict && seekerDistrict
+                        ? hiderDistrict === seekerDistrict
+                            ? `SAME — you're both in ${hiderDistrict} ${levelLabel}.`
+                            : `DIFFERENT — you're in ${hiderDistrict}, the seeker is in ${seekerDistrict}.`
+                        : `The ${levelLabel} could not be found for one or both locations.`;
+                result = [
+                    comparison,
+                    `Hider ${levelLabel}: ${hiderDistrict ?? "not found"}.`,
+                    `Seekers ${levelLabel}: ${seekerDistrict ?? "not found"}.`,
+                ].join("\n");
             } else if (type === "matching") {
                 const q = await hiderifyMatching(
                     {
@@ -650,24 +775,91 @@ export const HiderSidebar = () => {
                     } as unknown as MatchingQuestion,
                     hiderLoc,
                 );
-                if (
-                    q.type === "street-path" &&
-                    q.hiderStreetPathName &&
-                    q.seekerStreetPathName
-                ) {
-                    result = q.same
-                        ? `SAME — your nearest street or path is ${q.hiderStreetPathName}. The seeker's is also ${q.seekerStreetPathName}.`
-                        : `DIFFERENT — your nearest street or path is ${q.hiderStreetPathName}. The seeker's is ${q.seekerStreetPathName}.`;
-                } else if (q.type === "same-train-line" && q.hiderStationName) {
-                    result = q.same
-                        ? `YES: the selected transit line stops at ${q.hiderStationName}, your nearest valid stop.`
-                        : `NO: the selected transit line does not stop at ${q.hiderStationName}, your nearest valid stop.`;
-                } else if (
-                    q.type === "same-length-station" &&
-                    q.hiderStationName &&
-                    q.seekerStationName
-                ) {
-                    result = `${q.lengthComparison?.toUpperCase() ?? "UNKNOWN"} — your nearest station is ${q.hiderStationName}; the seeker's is ${q.seekerStationName}.`;
+                if (q.type === "street-path") {
+                    const [hiderStreet, seekerStreet] = await Promise.all([
+                        nearestStreetOrPathDetails(
+                            hiderLoc.latitude,
+                            hiderLoc.longitude,
+                        ),
+                        nearestStreetOrPathDetails(q.lat, q.lng),
+                    ]);
+                    const comparison = q.same
+                        ? "SAME — your nearest street or path is the same as the seeker's."
+                        : "DIFFERENT — your nearest street or path is not the seeker's.";
+                    result = [
+                        comparison,
+                        `Hider: ${hiderStreet?.name ?? q.hiderStreetPathName ?? "not found"}${hiderStreet?.distanceMeters !== null && hiderStreet?.distanceMeters !== undefined ? ` (${formatMetricDistance(hiderStreet.distanceMeters)} away)` : ""}.`,
+                        `Seekers: ${seekerStreet?.name ?? q.seekerStreetPathName ?? "not found"}${seekerStreet?.distanceMeters !== null && seekerStreet?.distanceMeters !== undefined ? ` (${formatMetricDistance(seekerStreet.distanceMeters)} away)` : ""}.`,
+                    ].join("\n");
+                } else if (q.type === "same-train-line") {
+                    const stops = await loadSpoonsStops();
+                    const hiderPoint = turf.point([
+                        hiderLoc.longitude,
+                        hiderLoc.latitude,
+                    ]);
+                    const nearestStop =
+                        stops.length > 0
+                            ? turf.nearestPoint(
+                                  hiderPoint,
+                                  turf.featureCollection(stops),
+                              )
+                            : null;
+                    const stopName =
+                        q.hiderStationName ??
+                        (nearestStop
+                            ? featureName(nearestStop as Feature<Point>)
+                            : "not found");
+                    const comparison = q.same
+                        ? `YES: the selected transit line stops at ${stopName}, your nearest valid stop.`
+                        : `NO: the selected transit line does not stop at ${stopName}, your nearest valid stop.`;
+                    result = [
+                        comparison,
+                        nearestStop
+                            ? `Hider to ${stopName}: ${formatMetricDistance(turf.distance(hiderPoint, nearestStop, { units: "meters" }))}.`
+                            : "Hider's nearest valid stop was not found.",
+                        `Selected transit-line stops: ${selectedTransitStops.length}.`,
+                    ].join("\n");
+                } else if (q.type === "same-length-station") {
+                    const stations = await findTransitStationsInZone();
+                    const hiderPoint = turf.point([
+                        hiderLoc.longitude,
+                        hiderLoc.latitude,
+                    ]);
+                    const seekerPoint = turf.point([q.lng, q.lat]);
+                    const hiderStation = turf.nearestPoint(
+                        hiderPoint,
+                        stations,
+                    );
+                    const seekerStation = turf.nearestPoint(
+                        seekerPoint,
+                        stations,
+                    );
+                    const hiderName =
+                        q.hiderStationName ?? featureName(hiderStation);
+                    const seekerName =
+                        q.seekerStationName ?? featureName(seekerStation);
+                    result = [
+                        `${q.lengthComparison?.toUpperCase() ?? "UNKNOWN"} — your nearest station name is ${q.lengthComparison ?? "not comparable"} in length.`,
+                        `Hider: ${hiderName} (${hiderName.length} characters, ${formatMetricDistance(turf.distance(hiderPoint, hiderStation, { units: "meters" }))} away).`,
+                        `Seekers: ${seekerName} (${seekerName.length} characters, ${formatMetricDistance(turf.distance(seekerPoint, seekerStation, { units: "meters" }))} away).`,
+                    ].join("\n");
+                } else if (MATCHING_POI_CATEGORIES.has(q.type)) {
+                    const [hiderNearest, seekerNearest] = await Promise.all([
+                        nearestToQuestion({
+                            ...q,
+                            lat: hiderLoc.latitude,
+                            lng: hiderLoc.longitude,
+                        } as HomeGameMatchingQuestions),
+                        nearestToQuestion(q as HomeGameMatchingQuestions),
+                    ]);
+                    const comparison = q.same
+                        ? `SAME — your nearest ${categoryLabel(category)} is the seeker's.`
+                        : `DIFFERENT — your nearest ${categoryLabel(category)} is not the seeker's.`;
+                    result = [
+                        comparison,
+                        `Hider: ${featureName(hiderNearest)} (${formatMetricDistance(Number(hiderNearest.properties.distanceToPoint) * 1000)} away).`,
+                        `Seekers: ${featureName(seekerNearest)} (${formatMetricDistance(Number(seekerNearest.properties.distanceToPoint) * 1000)} away).`,
+                    ].join("\n");
                 } else {
                     result = q.same
                         ? `SAME — your nearest ${categoryLabel(category)} is the seeker's.`
@@ -1044,7 +1236,7 @@ export const HiderSidebar = () => {
                             <span className="font-semibold">
                                 {nearest.name}
                             </span>{" "}
-                            ({nearest.distanceMiles.toFixed(1)} mi)
+                            ({formatMetricDistance(nearest.distanceMeters)})
                         </div>
                     )}
 
@@ -1102,7 +1294,7 @@ const WaterLocationSummary = ({
     <div>
         <span className="font-semibold">{label}:</span>{" "}
         {water
-            ? `${formatWaterDistance(water.distanceMeters)} from ${waterNameForSentence(water.name)}`
+            ? `${formatMetricDistance(water.distanceMeters)} from ${waterNameForSentence(water.name)}`
             : "water distance unavailable outside the static data area"}
     </div>
 );

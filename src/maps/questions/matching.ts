@@ -340,6 +340,34 @@ const findStreetOrPathLinesInZone = _.memoize(async () => {
     }
 });
 
+export const nearestStreetOrPathDetails = async (lat: number, lng: number) => {
+    const name = await nearestStreetOrPathNameInZone(lat, lng);
+    if (!name) return null;
+
+    try {
+        const lines = await findStreetOrPathLinesInZone();
+        const matchingLines = lines.features.filter(
+            (feature) => feature.properties?.name === name,
+        );
+        const point = turf.point([lng, lat]);
+        const distanceMeters = Math.min(
+            ...matchingLines.map((feature) =>
+                turf.pointToLineDistance(point, feature, {
+                    units: "meters",
+                }),
+            ),
+        );
+        return {
+            name,
+            distanceMeters: Number.isFinite(distanceMeters)
+                ? distanceMeters
+                : null,
+        };
+    } catch {
+        return { name, distanceMeters: null };
+    }
+};
+
 export const findTransitStationsInZone = _.memoize(
     async (): Promise<FeatureCollection<Point>> => {
         try {
